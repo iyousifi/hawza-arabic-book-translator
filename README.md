@@ -73,6 +73,7 @@ python -m translator <input> [options]
 | `--paper-size` | | PDF paper size (`b5` / `iso-b5`, `a4`, `a5`, `letter`) | `b5` |
 | `--book-title` | | Custom textbook title for PDF cover page & headers | input filename |
 | `--book-subtitle` | | Custom subtitle for PDF cover page | domain preset |
+| `--inline-arabic`, `--bilingual` | | Render original Arabic text inline above each translated paragraph | `false` |
 | `--keep-typ` | | Retain intermediate .typ source file alongside PDF | `false` |
 | `--keep-headers` | | Keep running headers & page footers in PDFs | `false` |
 | `--merge-footnotes` | | Do not isolate bottom footnotes into a separate section | `false` |

@@ -96,15 +96,17 @@ def default_output_path(
     input_path: str,
     lang: str = "en",
     slice_tag: Optional[str] = None,
+    bilingual: bool = False,
 ) -> str:
     """Generate a default output path from input path, language, and optional slice tag.
 
-    e.g.  book.pdf, lang="da", slice_tag="p10-25"  →  book_p10-25_translated_da.md
+    e.g.  book.pdf, lang="da", slice_tag="p10-25", bilingual=True → book_p10-25_bilingual_da.md
     """
     p = Path(input_path)
     lang_suffix = f"_{lang.lower()}" if lang.lower() != "en" else ""
     tag_part = f"_{slice_tag}" if slice_tag else ""
-    return str(p.with_name(f"{p.stem}{tag_part}_translated{lang_suffix}.md"))
+    kind = "_bilingual" if bilingual else "_translated"
+    return str(p.with_name(f"{p.stem}{tag_part}{kind}{lang_suffix}.md"))
 
 
 def default_audit_path(output_path: str) -> str:

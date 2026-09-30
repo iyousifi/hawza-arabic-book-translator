@@ -213,6 +213,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Subtitle for PDF cover page",
     )
     parser.add_argument(
+        "--inline-arabic",
+        "--bilingual",
+        dest="inline_arabic",
+        action="store_true",
+        help="Render original Arabic paragraphs inline above each translated paragraph (bilingual edition)",
+    )
+    parser.add_argument(
         "--keep-typ",
         action="store_true",
         help="Retain intermediate .typ source file alongside the PDF",
@@ -349,12 +356,18 @@ def main(argv: list[str] | None = None) -> None:
         verifier_provider=args.verifier_provider,
         session_glossary=args.session_glossary,
         save_session_glossary=save_session_glossary_path,
+        inline_arabic=args.inline_arabic,
     )
 
     # --- Determine Output Paths ---
     slice_parts = [t for t in [chapter_tag, page_tag] if t]
     slice_tag = "_".join(slice_parts) if slice_parts else None
-    output_path = args.output or default_output_path(args.input, lang=args.lang, slice_tag=slice_tag)
+    output_path = args.output or default_output_path(
+        args.input,
+        lang=args.lang,
+        slice_tag=slice_tag,
+        bilingual=args.inline_arabic,
+    )
 
     audit_path = None
     if args.verify:

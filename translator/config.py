@@ -38,10 +38,20 @@ def get_language_name(lang: str) -> str:
     return LANGUAGE_NAMES.get(clean, lang.capitalize())
 
 
-def build_system_prompt(target_lang: str = "en", domain: str = "mantiq") -> str:
+def build_system_prompt(target_lang: str = "en", domain: str = "mantiq", inline_arabic: bool = False) -> str:
     """Construct a rigorous scholarly system prompt tailored to the target language and domain."""
     lang_name = get_language_name(target_lang)
     domain_desc = DOMAIN_DESCRIPTIONS.get(domain.lower(), DOMAIN_DESCRIPTIONS["general"])
+
+    bilingual_rule = ""
+    if inline_arabic:
+        bilingual_rule = """
+9. **Strict Paragraph Correspondence for Bilingual Alignment**:
+   - The source Arabic text is structured in distinct paragraphs separated by blank lines.
+   - You MUST maintain the EXACT same paragraph structure and count in your output.
+   - Output exactly one translated paragraph for each source Arabic paragraph.
+   - Do NOT merge separate Arabic paragraphs into one, and do NOT split one Arabic paragraph into multiple paragraphs.
+"""
 
     return f"""\
 You are a master academic translator specializing in Classical Scholastic Arabic (al-Turath al-Hawzawi) \
@@ -91,7 +101,7 @@ him and his family).
 8. **Structure & Translator's Notes**:
    - Preserve all chapter headings, section dividers, numbered points, and structural hierarchies.
    - If a textual variant or term ambiguity requires clarification, add a concise note in brackets, \
-e.g., [Translator's note: ...].
+e.g., [Translator's note: ...].{bilingual_rule}
 """
 
 
@@ -238,6 +248,7 @@ class ModelConfig:
     book_title: Optional[str] = None             # custom title for headers and title page
     book_subtitle: Optional[str] = None          # custom subtitle for title page
     keep_typ_source: bool = False                # retain intermediate .typ source file
+    inline_arabic: bool = False                  # include original Arabic text inline above each translated paragraph (bilingual mode)
 
     # provider-specific defaults
     GEMINI_DEFAULT_MODEL: str = field(default="gemini-3.8-flash", repr=False)

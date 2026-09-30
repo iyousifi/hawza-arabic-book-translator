@@ -337,7 +337,11 @@ def translate(
     lang_name = get_language_name(cfg.target_lang)
 
     # 1. Build scholarly system prompt for target language and domain
-    system_prompt = build_system_prompt(target_lang=cfg.target_lang, domain=cfg.domain)
+    system_prompt = build_system_prompt(
+        target_lang=cfg.target_lang,
+        domain=cfg.domain,
+        inline_arabic=cfg.inline_arabic,
+    )
 
     # 2. Load glossary matching language and domain
     glossary = load_glossary(path=glossary_path, lang=cfg.target_lang, domain=cfg.domain)
@@ -414,13 +418,25 @@ def translate(
             )
             write_output(dry_report, audit_report_path)
             console.print(f"[dim]Saved dry-run audit report to {audit_report_path}[/dim]")
-        translated_chunks = [
-            f"[DRY RUN - {lang_name.upper()} ({cfg.domain}){verify_tag}] Translated chunk {i + 1}/{total} "
-            f"({c.token_count} tokens)\n\n"
-            f"(Antecedent context: {len(c.prev_arabic_context)} chars)\n\n"
-            f"(Original {len(c.text)} chars)"
-            for i, c in enumerate(chunks)
-        ]
+        if cfg.inline_arabic:
+            from translator.bilingual import format_bilingual_markdown
+
+            translated_chunks = [
+                format_bilingual_markdown(
+                    c.text,
+                    f"[DRY RUN - {lang_name.upper()} ({cfg.domain}){verify_tag}] Translated chunk {i + 1}/{total} "
+                    f"({c.token_count} tokens)",
+                )
+                for i, c in enumerate(chunks)
+            ]
+        else:
+            translated_chunks = [
+                f"[DRY RUN - {lang_name.upper()} ({cfg.domain}){verify_tag}] Translated chunk {i + 1}/{total} "
+                f"({c.token_count} tokens)\n\n"
+                f"(Antecedent context: {len(c.prev_arabic_context)} chars)\n\n"
+                f"(Original {len(c.text)} chars)"
+                for i, c in enumerate(chunks)
+            ]
         return "\n\n".join(translated_chunks)
 
     # 5. Pick provider function
@@ -523,7 +539,14 @@ def translate(
             if text_terms:
                 session_memory.record_terms(text_terms, source_chunk=i + 1)
 
-            translated_chunks.append(final_text)
+            if cfg.inline_arabic:
+                from translator.bilingual import format_bilingual_markdown
+
+                chunk_output = format_bilingual_markdown(chunk_item.text, final_text)
+            else:
+                chunk_output = final_text
+
+            translated_chunks.append(chunk_output)
             progress.advance(task)
 
             # Delay between chunks to respect rate limits

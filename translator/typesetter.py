@@ -91,13 +91,20 @@ def markdown_to_typst_content(md_text: str) -> str:
         nonlocal in_blockquote, blockquote_lines
         if blockquote_lines:
             content = " ".join(blockquote_lines).strip()
-            # Distinguish Quranic verses or Hadith
-            is_sacred = any(
-                kw in content.lower()
-                for kw in ["qur'an", "koran", "hadith", "riwayah", "profeten", "imam", "«", "»", "allah"]
-            )
-            callout_fn = "quran_callout" if is_sacred else "hawza_callout"
-            lines.append(f"\n#{callout_fn}[\n  {content}\n]\n")
+            # Check if this is an Arabic source block
+            is_arabic_source = "📜" in content or "الأصل العربي" in content or bool(re.search(r"[\u0600-\u06FF]{6,}", content))
+            if is_arabic_source:
+                # Clean header prefix if present
+                clean_ar = re.sub(r"^[📜\s*]*\[?الأصل العربي\]?[:\s*]*", "", content).strip()
+                lines.append(f"\n#arabic_block[\n  {clean_ar}\n]\n")
+            else:
+                # Distinguish Quranic verses or Hadith
+                is_sacred = any(
+                    kw in content.lower()
+                    for kw in ["qur'an", "koran", "hadith", "riwayah", "profeten", "imam", "«", "»", "allah"]
+                )
+                callout_fn = "quran_callout" if is_sacred else "hawza_callout"
+                lines.append(f"\n#{callout_fn}[\n  {content}\n]\n")
             blockquote_lines = []
         in_blockquote = False
 
@@ -222,6 +229,19 @@ def build_typst_document(
 )[
   #set par(first-line-indent: 0pt)
   #text(fill: rgb("#1b4332"), weight: "medium")[#content]
+]
+
+#let arabic_block(content) = block(
+  width: 100%,
+  fill: rgb("#faf8f5"),
+  stroke: (right: 3pt + rgb("#b08968"), rest: 0.5pt + rgb("#e8e2d9")),
+  inset: (x: 14pt, y: 10pt),
+  radius: (left: 4pt),
+  spacing: 0.9em,
+)[
+  #set text(font: ("Amiri", "Traditional Arabic", "Scheherazade New", "Segoe UI"), size: 11pt, dir: rtl, lang: "ar")
+  #set par(justify: true, leading: 0.85em, first-line-indent: 0pt)
+  #content
 ]
 
 // --- Front Matter / Academic Title Page ---
