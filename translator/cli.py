@@ -122,6 +122,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not filter out running headers and footers from PDF pages",
     )
     parser.add_argument(
+        "--keep-rubrics",
+        action="store_true",
+        help="Do not filter out vertical margin tabs and side rubrics from PDF pages",
+    )
+    parser.add_argument(
         "--merge-footnotes",
         action="store_true",
         help="Do not separate bottom footnotes/commentary into a dedicated section",
@@ -272,6 +277,7 @@ def main(argv: list[str] | None = None) -> None:
                 args.input,
                 remove_headers_footers=not args.keep_headers,
                 separate_footnotes=not args.merge_footnotes,
+                exclude_margin_rubrics=not args.keep_rubrics,
             )
         except Exception as exc:
             console.print(f"[bold red]Error reading file:[/bold red] {exc}")
@@ -305,6 +311,7 @@ def main(argv: list[str] | None = None) -> None:
             args.input,
             remove_headers_footers=not args.keep_headers,
             separate_footnotes=not args.merge_footnotes,
+            exclude_margin_rubrics=not args.keep_rubrics,
             skip_pages=skip_pages,
             take_pages=take_pages,
         )

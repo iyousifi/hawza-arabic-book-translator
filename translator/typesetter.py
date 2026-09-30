@@ -153,7 +153,7 @@ def markdown_to_typst_content(md_text: str) -> str:
 
         # Horizontal rules
         if re.match(r"^[-*_]{3,}$", trimmed):
-            lines.append("\n#v(0.8em)\n#align(center)[#text(12pt, fill: rgb(\"#1d3557\"))[✦ ✦ ✦]]\n#v(0.8em)\n")
+            lines.append("\n#v(0.8em)\n#align(center)[#text(12pt, fill: rgb(\"#24408f\"))[✦ ✦ ✦]]\n#v(0.8em)\n")
             continue
 
         # Markdown Headings
@@ -234,14 +234,27 @@ def build_typst_document(
 #set text(
   font: ("Linux Libertine", "Times New Roman", "Georgia", "Amiri", "Traditional Arabic", "Segoe UI"),
   size: 10pt,
+  fill: rgb("#231f20"),
   lang: "{lang}"
 )
 #set par(justify: true, leading: 0.72em, first-line-indent: 1.2em)
-#show heading: set text(fill: rgb("#1d3557"), font: ("Georgia", "Times New Roman"))
+#set enum(numbering: (n) => text(fill: rgb("#d2232a"), weight: "bold")[#n. ])
+#set list(marker: text(fill: rgb("#d2232a"), weight: "bold")[•])
+
+#show heading: set text(fill: rgb("#24408f"), font: ("Georgia", "Times New Roman"))
+#show heading.where(level: 1): it => block(spacing: 1.5em)[
+  #text(fill: rgb("#2e3092"), weight: "bold", font: ("Georgia", "Times New Roman"), size: 16pt)[#it.body]
+]
+#show heading.where(level: 2): it => block(spacing: 1.2em)[
+  #text(fill: rgb("#24408f"), weight: "bold", font: ("Georgia", "Times New Roman"), size: 13pt)[#it.body]
+]
+#show heading.where(level: 3): it => block(spacing: 1.0em)[
+  #text(fill: rgb("#24408f"), weight: "bold", font: ("Georgia", "Times New Roman"), size: 11pt)[#it.body]
+]
 
 #let hawza_callout(content) = block(
   width: 100%,
-  stroke: (left: 3pt + rgb("#1d3557")),
+  stroke: (left: 3pt + rgb("#24408f")),
   fill: rgb("#f6f8fa"),
   inset: (x: 14pt, y: 10pt),
   radius: (right: 4pt),
@@ -291,11 +304,11 @@ def build_typst_document(
   #v(2.0cm)
   #text(10pt, tracking: 2pt, fill: luma(100))[HAWZA ACADEMIC TEXTBOOK SERIES]
   #v(0.8cm)
-  #text(22pt, weight: "bold", fill: rgb("#1d3557"))[{clean_title}]
+  #text(22pt, weight: "bold", fill: rgb("#2e3092"))[{clean_title}]
   #v(0.4cm)
   #text(13pt, style: "italic", fill: luma(80))[{clean_subtitle}]
   #v(0.6cm)
-  #line(length: 40%, stroke: 1pt + rgb("#1d3557"))
+  #line(length: 40%, stroke: 1pt + rgb("#2e3092"))
   #v(0.6cm)
   #text(10pt, fill: luma(100))[Scholastisk oversættelse og teologisk audit]
   #v(3.0cm)

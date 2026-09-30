@@ -23,6 +23,7 @@ def read_file(
     path: str,
     remove_headers_footers: bool = True,
     separate_footnotes: bool = True,
+    exclude_margin_rubrics: bool = True,
     skip_pages: int = 0,
     take_pages: Optional[int] = None,
 ) -> str:
@@ -38,6 +39,7 @@ def read_file(
             path=p,
             remove_headers_footers=remove_headers_footers,
             separate_footnotes=separate_footnotes,
+            exclude_margin_rubrics=exclude_margin_rubrics,
             skip_pages=skip_pages,
             take_pages=take_pages,
         )

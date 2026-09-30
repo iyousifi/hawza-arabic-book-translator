@@ -182,6 +182,7 @@ class PageBlock:
     y1: float
     is_footnote: bool = False
     is_header_or_footer: bool = False
+    is_margin_rubric: bool = False
 
 
 def classify_page_blocks(
@@ -190,6 +191,7 @@ def classify_page_blocks(
     page_height: float,
     remove_headers_footers: bool = True,
     separate_footnotes: bool = True,
+    exclude_margin_rubrics: bool = True,
 ) -> Tuple[List[str], List[str]]:
     """Classify extracted PDF blocks into body text and footnotes.
 
@@ -205,6 +207,8 @@ def classify_page_blocks(
         Whether to filter out running headers (<7.5% page height) and solitary footers (>92.5%).
     separate_footnotes:
         Whether to identify and separate bottom commentary/footnotes.
+    exclude_margin_rubrics:
+        Whether to exclude vertical margin tabs and side ribbons (e.g. 'مدخل') from body text.
 
     Returns
     -------
@@ -248,6 +252,20 @@ def classify_page_blocks(
         if _FOOTNOTE_RULE_RE.match(norm_text):
             continue  # omit separator rule line itself
 
+        # 4. Vertical margin tab / rubric detection:
+        # Detect vertical decorative ribbons or margin rubrics in outer margins (x0 > 86% or x1 < 14%)
+        # with tall aspect ratio (height > 1.8 * width) or explicit margin rubric keywords.
+        bw = x1 - x0
+        bh = y1 - y0
+        in_outer_margin = (x0 > page_width * 0.86) or (x1 < page_width * 0.14)
+        is_tall_vertical_ribbon = (bh > 1.8 * bw) and (bh > 35)
+        is_margin_rubric_keyword = any(
+            kw in norm_text for kw in ("مدخل", "تمهيد", "تنبيه", "تذكرة", "إشارة", "إضاءة")
+        )
+
+        if exclude_margin_rubrics and in_outer_margin and (is_tall_vertical_ribbon or is_margin_rubric_keyword):
+            block.is_margin_rubric = True
+
         classified.append(block)
 
     # Sort blocks: For RTL texts, right-hand columns come before left-hand columns
@@ -268,7 +286,7 @@ def classify_page_blocks(
     footnote_blocks: List[str] = []
 
     for blk in classified:
-        if blk.is_header_or_footer:
+        if blk.is_header_or_footer or blk.is_margin_rubric:
             continue
 
         if separate_footnotes:
@@ -359,6 +377,7 @@ def extract_text_from_pdf(
     path: Path | str,
     remove_headers_footers: bool = True,
     separate_footnotes: bool = True,
+    exclude_margin_rubrics: bool = True,
     skip_pages: int = 0,
     take_pages: Optional[int] = None,
 ) -> str:
@@ -371,7 +390,9 @@ def extract_text_from_pdf(
     remove_headers_footers:
         Strip running headers and page numbers.
     separate_footnotes:
-        Group bottom commentary/footnotes into a distinct section per page.
+        Group bottom commentary/footnotes into a dedicated section per page.
+    exclude_margin_rubrics:
+        Exclude vertical margin tabs and side ribbons (e.g. 'مدخل') from body text.
     skip_pages:
         Number of pages to skip from start (0-indexed).
     take_pages:
@@ -407,6 +428,7 @@ def extract_text_from_pdf(
             page_height=rect.height,
             remove_headers_footers=remove_headers_footers,
             separate_footnotes=separate_footnotes,
+            exclude_margin_rubrics=exclude_margin_rubrics,
         )
 
         page_parts: List[str] = []

@@ -114,6 +114,24 @@ Denne indledning har til formål at klargøre emnerne.
             self.assertTrue(out_pdf.exists())
             self.assertGreater(out_pdf.stat().st_size, 5000)
 
+    def test_bilingual_pdf_palette_with_lists(self):
+        ar = "الدرس الأول: مباحث الألفاظ.\n\n1. الدلالة الوضعية.\n2. الدلالة العقلية."
+        tr = "# Første Lektion: Udtrykkenes Emner\n\n1. Den konventionelle betegnelse.\n2. Den rationelle betegnelse."
+        md = format_bilingual_markdown(ar, tr)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = Path(tmpdir) / "palette_test.pdf"
+            compile_markdown_to_pdf(
+                md_text=md,
+                output_pdf_path=out_pdf,
+                title="Mantiq Lærebog",
+                subtitle="Tosproget Udgave",
+                lang="da",
+                domain="mantiq",
+            )
+            self.assertTrue(out_pdf.exists())
+            self.assertGreater(out_pdf.stat().st_size, 5000)
+
     def test_parse_tagged_paragraphs_variations(self):
         text = """
 [P1]

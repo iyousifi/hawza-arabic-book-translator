@@ -215,6 +215,43 @@ class TestSmartNormalizer(unittest.TestCase):
             if tmp_path.exists():
                 tmp_path.unlink()
 
+    def test_margin_rubric_exclusion(self):
+        from translator.normalizer import classify_page_blocks
+
+        # Simulated page: width 600, height 800
+        # Block 1: Body text in main column
+        # Block 2: Margin rubric "مدخل" at x0=545 (545/600 = 0.908 > 0.86), w=25, h=80 (>1.8*w)
+        blocks = [
+            (50.0, 100.0, 500.0, 200.0, "النص الرئيسي للدرس الأول.\n", 0, 0),
+            (545.0, 150.0, 570.0, 230.0, "مــــــــدخــــــــل\n", 1, 0),
+        ]
+
+        # With exclude_margin_rubrics=True (default)
+        body_excl, _ = classify_page_blocks(blocks, page_width=600.0, page_height=800.0, exclude_margin_rubrics=True)
+        self.assertEqual(len(body_excl), 1)
+        self.assertIn("النص الرئيسي", body_excl[0])
+        self.assertTrue(not any("مدخل" in b for b in body_excl))
+
+        # With exclude_margin_rubrics=False
+        body_kept, _ = classify_page_blocks(blocks, page_width=600.0, page_height=800.0, exclude_margin_rubrics=False)
+        self.assertEqual(len(body_kept), 2)
+
+    def test_typesetter_palette_styling(self):
+        from translator.typesetter import build_typst_document
+
+        doc = build_typst_document("= Overskrift\n1. Første punkt", title="Test Bog", lang="da")
+        # Crimson red for lists
+        self.assertIn("#d2232a", doc)
+        # Royal blue for subheadings
+        self.assertIn("#24408f", doc)
+        # Deep navy for main headings/title
+        self.assertIn("#2e3092", doc)
+        # Charcoal for body text
+        self.assertIn("#231f20", doc)
+        # Parchment background and amber border for Arabic blocks
+        self.assertIn("#faf8f5", doc)
+        self.assertIn("#b08968", doc)
+
     def test_merge_fragmented_blocks(self):
         from translator.normalizer import merge_fragmented_blocks
 
