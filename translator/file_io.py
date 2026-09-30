@@ -8,6 +8,7 @@ from typing import List
 
 from translator.normalizer import (
     extract_text_from_pdf,
+    fix_font_ligature_reversals,
     normalize_arabic_text,
 )
 

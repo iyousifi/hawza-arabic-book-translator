@@ -140,6 +140,45 @@ class TestSmartNormalizer(unittest.TestCase):
         normalized = normalize_arabic_text(raw)
         self.assertEqual(normalized, "الكلي والجزئي")
 
+    def test_fix_font_ligature_reversals(self):
+        from translator.normalizer import fix_font_ligature_reversals
+
+        # 1. Particles and prepositions: يف -> في, عىل -> على, إىل -> إلى, كام -> كما, بني -> بين
+        sample_particles = "يف حديثنا عن تطور املنطق نلقي نظرة عىل ثالثة أدوار، كام يستهدف التمييز بني األمرين."
+        repaired = normalize_arabic_text(sample_particles)
+        self.assertIn("في حديثنا", repaired)
+        self.assertIn("تطور المنطق", repaired)
+        self.assertIn("على ثلاثة أدوار", repaired)
+        self.assertIn("كما يستهدف", repaired)
+        self.assertIn("بين الأمرين", repaired)
+
+        # 2. Definite article & hanging Lam ligatures: امل, اجل, احل, اخل, اهل
+        sample_ligatures = "املنطق اجلديد احلديث يف اخلارجية لبناء اهلدف."
+        repaired_lig = fix_font_ligature_reversals(sample_ligatures)
+        self.assertEqual(repaired_lig, "المنطق الجديد الحديث في الخارجية لبناء الهدف.")
+
+        # 3. Adjectives ending in رية -> يرة and words like كبرية, كثرية
+        sample_adj = "وجدنا صعوبة كبرية يف مسائل كثرية صغرية وقصرية."
+        repaired_adj = fix_font_ligature_reversals(sample_adj)
+        self.assertEqual(repaired_adj, "وجدنا صعوبة كبيرة في مسائل كثيرة صغيرة وقصيرة.")
+
+        # 4. Scholastic terminology: أفلاطون, تاريخية, صرح, تشرح, يخلف, ضروري, الشيء, تماما
+        sample_scholastic = "فرشح منطق سقراط ثم أفالطون يف زاوية تارخيية لبناء رصح املعرفة، ترشح الغاية وخيلف أثرا وهو من الرضوري متاما لفهم اليشء."
+        repaired_sch = fix_font_ligature_reversals(sample_scholastic)
+        self.assertIn("فشرح منطق سقراط", repaired_sch)
+        self.assertIn("أفلاطون", repaired_sch)
+        self.assertIn("زاوية تاريخية", repaired_sch)
+        self.assertIn("بناء صرح المعرفة", repaired_sch)
+        self.assertIn("تشرح الغاية", repaired_sch)
+        self.assertIn("يخلف أثرا", repaired_sch)
+        self.assertIn("الضروري", repaired_sch)
+        self.assertIn("تماما", repaired_sch)
+        self.assertIn("الشيء", repaired_sch)
+
+        # 5. Protection of legitimate words ending with يف (كيف, تعريف, تصنيف, إلخ)
+        legit = "كيف يمكن تعريف وتصنيف هذا المبحث؟"
+        self.assertEqual(fix_font_ligature_reversals(legit), legit)
+
     def test_classify_page_blocks(self):
         from translator.normalizer import classify_page_blocks
 

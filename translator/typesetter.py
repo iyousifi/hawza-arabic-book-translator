@@ -425,9 +425,23 @@ def compile_markdown_to_pdf(
     out_typ.write_text(typst_doc, encoding="utf-8")
 
     # 4. Compile via Typst
+    final_output_pdf = out_pdf
     try:
-        typst.compile(str(out_typ), output=str(out_pdf))
-        logger.info("Successfully compiled academic PDF: %s", out_pdf)
+        try:
+            typst.compile(str(out_typ), output=str(out_pdf))
+            logger.info("Successfully compiled academic PDF: %s", out_pdf)
+        except OSError as e:
+            if "os error 32" in str(e) or "being used by another process" in str(e):
+                fallback_pdf = out_pdf.with_name(f"{out_pdf.stem}_updated{out_pdf.suffix}")
+                logger.warning(
+                    "Destination PDF %s is locked by another process. Compiling to fallback: %s",
+                    out_pdf,
+                    fallback_pdf,
+                )
+                typst.compile(str(out_typ), output=str(fallback_pdf))
+                final_output_pdf = fallback_pdf
+            else:
+                raise
     finally:
         if not keep_typ_source and out_typ.exists():
             try:
@@ -435,4 +449,4 @@ def compile_markdown_to_pdf(
             except Exception:
                 pass
 
-    return out_pdf
+    return final_output_pdf

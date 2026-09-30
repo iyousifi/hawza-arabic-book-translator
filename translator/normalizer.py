@@ -92,6 +92,81 @@ def detect_and_fix_reversed_arabic(text: str) -> str:
     return text
 
 
+def fix_font_ligature_reversals(text: str) -> str:
+    """Repair font-specific glyph and ligature reversal artifacts commonly found in Arabic PDFs.
+
+    Classical Arabic typesetting fonts (such as Lotus, Swissra, or Traditional Arabic) often have
+    ligature glyphs whose ToUnicode CMap entries were stored in visual or inverted byte order.
+    This function restores the proper phonetic/logical character order for:
+      - Standalone and prefixed prepositions (في, على, إلى, كما, بين)
+      - Alef-Lam ligatures (الأ, الإ, الآ, الا)
+      - Descending/hanging Lam ligatures with Jim, Hah, Khah, Meem, Heh (الج, الح, الخ, الم, اله)
+      - Nisba/adjective endings (-الي, -اني, -افي) and reversed -يرة endings (كبيرة, كثيرة, etc.)
+      - Systemic typographic reversals in Hawza logic terminology (اجتماع, استدلال, أفلاطون, الشيء, تماما, إلخ).
+    """
+    if not text:
+        return ""
+
+    # 1. Standalone prepositions & particles:
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف])?يف(?![\u0600-\u06FF])", r"\1في", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب])?عىل(?![\u0600-\u06FF])", r"\1على", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب])?إىل(?![\u0600-\u06FF])", r"\1إلى", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف])?كام(?![\u0600-\u06FF])", r"\1كما", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف]|ما)?بني(?![\u0600-\u06FF])", r"\1بين", text)
+
+    # 2. Definite article (ال) ligature reversals:
+    text = text.replace("األ", "الأ").replace("اإل", "الإ").replace("اآل", "الآ")
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?|[لب]ل)اال", r"\1الا", text)
+
+    # 3. Classical hanging ligatures with Lam (ج, ح, خ, م, ه):
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفبك]?|[لب]ل)امل", r"\1الم", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفبك]?|[لب]ل)اجل", r"\1الج", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفبك]?|[لب]ل)احل", r"\1الح", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفبك]?|[لب]ل)اخل", r"\1الخ", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفبك]?|[لب]ل)اهل(?![\u0600-\u06FF])", r"\1اله", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفبك]?|[لب]ل)اهل([ء-ي])", lambda m: m.group(0) if m.group(2) == "ك" else m.group(1) + "اله" + m.group(2), text)
+
+    # 4. Final nisba & adjective letter reversals:
+    text = re.sub(r"([ء-ي]+)ايل\b", r"\1الي", text)
+    text = re.sub(r"([ء-ي]+)اين\b", lambda m: m.group(1) + "اني" if m.group(1) in ("الث", "والث", "اليون", "الإنس", "الوجـد", "المع", "ث") else m.group(0), text)
+    text = re.sub(r"([ء-ي]+)ايف\b", r"\1افي", text)
+
+    # 5. Adjectives ending in رية that should be يرة:
+    roots = ["كب", "كث", "صغ", "قص", "خط", "مس", "أخ", "اخ", "عس", "وف", "شه", "جز", "بص", "يس"]
+    for r in roots:
+        text = re.sub(rf"(?<![\u0600-\u06FF])((?:ال|وال|فال|بال|كال|و|ف|ب|ل|ك)?){r}رية(?![\u0600-\u06FF])", rf"\1{r}يرة", text)
+
+    # 6. Specific systemic typographic reversals in classical text:
+    text = text.replace("جتامع", "جتماع")
+    text = text.replace("ثالثة", "ثلاثة").replace("الثالثة", "الثلاثة")
+    text = text.replace("تارخي", "تاريخ")
+    text = text.replace("أفالطون", "أفلاطون")
+    text = text.replace("متزج", "تمزج")
+    text = text.replace("أخريا", "أخيرا").replace("اخريا", "أخيرا")
+    text = text.replace("اإلجيايب", "الإيجابي").replace("الإجيايب", "الإيجابي").replace("إجيايب", "إيجابي")
+    text = text.replace("مالحظ", "ملاحظ")
+    text = text.replace("االجحاف", "الإجحاف")
+    text = re.sub(r"([ء-ي]+)وهلا\b", r"\1ولها", text)
+    text = re.sub(r"([ء-ي]+)تهام\b", r"\1تهما", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكسي]?|يت)خيت", r"\1يخت", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكسي]?|يت)خيلف", r"\1يخلف", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])((?:[وفلبك]?(?:ال)?))رضوري", r"\1ضروري", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])((?:[وفلبك]?(?:ال)?))يشء", r"\1شيء", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب])?متاما\b", r"\1تماما", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])((?:[وفلبك]?(?:ال)?))رصح(?![\u0600-\u06FF])", r"\1صرح", text)
+    text = re.sub(r"\bترشح\b", "تشرح", text)
+    text = re.sub(r"\bفرشح\b", "فشرح", text)
+    text = re.sub(r"\bحتدد\b", "تحدد", text)
+    text = re.sub(r"\bسري\s+(الفكر|التاريخ|الأحداث|المنطق)", r"سير \1", text)
+    text = re.sub(
+        r"\b([وفب]?)ثالث\s+(زوايا|خطوات|درجات|مراحل|قواعد|أسئلة|عوامل|حقائق|ملاحظات|مالحظات|أقسام|مرات|وسائل|مفكرين|حالات|علامات|أيام|سنين|سنوات)",
+        r"\1ثلاث \2",
+        text,
+    )
+
+    return text
+
+
 # ---------------------------------------------------------------------------
 # Text Normalization
 # ---------------------------------------------------------------------------
@@ -147,7 +222,11 @@ def normalize_arabic_text(
         .replace("\u0649\u0654", "\u0626")
     )
 
-    # Step 6: Optional removal of harakat (if requested for search/matching)
+    # Step 6: Fix font-specific glyph and ligature reversal artifacts
+    if fix_reversals:
+        recomposed = fix_font_ligature_reversals(recomposed)
+
+    # Step 7: Optional removal of harakat (if requested for search/matching)
     if strip_harakat:
         recomposed = _HARAKAT_RE.sub("", recomposed)
 
@@ -402,6 +481,7 @@ def _extract_blocks_with_styling(page: Any) -> List[Tuple[float, float, float, f
                     t = s.get("text", "")
                     if not t:
                         continue
+                    t = fix_font_ligature_reversals(t)
                     color = s.get("color", 0)
                     if color == 0x24408f and len(t.strip()) > 1 and len(spans) > 1:
                         line_parts.append(f"**{t.strip()}** ")
