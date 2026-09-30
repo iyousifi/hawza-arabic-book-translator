@@ -1,4 +1,4 @@
-"""File I/O: read Arabic source files and write translated output."""
+"""File I/O: read Arabic source files, normalize text, chunk classical discourse, and write translated output."""
 
 from __future__ import annotations
 
@@ -6,54 +6,60 @@ import re
 from pathlib import Path
 from typing import List
 
+from translator.normalizer import (
+    extract_text_from_pdf,
+    normalize_arabic_text,
+)
+
+
+from translator.slicing import slice_text_by_pages
+
 
 # ---------------------------------------------------------------------------
 # Readers
 # ---------------------------------------------------------------------------
 
-def read_file(path: str) -> str:
-    """Read an input file and return its text content.
+def read_file(
+    path: str,
+    remove_headers_footers: bool = True,
+    separate_footnotes: bool = True,
+    skip_pages: int = 0,
+    take_pages: Optional[int] = None,
+) -> str:
+    """Read an input file and return its clean, normalized text content.
 
     Supported formats: .txt, .pdf, .docx
     """
     p = Path(path)
     suffix = p.suffix.lower()
 
-    if suffix == ".txt":
-        return _read_txt(p)
-    elif suffix == ".pdf":
-        return _read_pdf(p)
+    if suffix == ".pdf":
+        return extract_text_from_pdf(
+            path=p,
+            remove_headers_footers=remove_headers_footers,
+            separate_footnotes=separate_footnotes,
+            skip_pages=skip_pages,
+            take_pages=take_pages,
+        )
+
+    if suffix in (".txt", ".md"):
+        raw = _read_txt(p)
     elif suffix == ".docx":
-        return _read_docx(p)
+        raw = _read_docx(p)
     else:
         raise ValueError(
-            f"Unsupported file format '{suffix}'. Supported: .txt, .pdf, .docx"
+            f"Unsupported file format '{suffix}'. Supported: .txt, .md, .pdf, .docx"
         )
+
+    norm = normalize_arabic_text(raw)
+    if skip_pages > 0 or take_pages is not None:
+        norm = slice_text_by_pages(norm, skip_pages=skip_pages, take_pages=take_pages)
+    return norm
 
 
 def _read_txt(path: Path) -> str:
     """Read a plain text file (UTF-8)."""
     return path.read_text(encoding="utf-8")
-
-
-def _read_pdf(path: Path) -> str:
-    """Extract text from a PDF using PyMuPDF (fitz)."""
-    try:
-        import fitz  # PyMuPDF
-    except ImportError:
-        raise ImportError(
-            "PyMuPDF is required to read PDF files. "
-            "Install it with: pip install PyMuPDF"
-        )
-
-    doc = fitz.open(str(path))
-    pages: List[str] = []
-    for page in doc:
-        text = page.get_text("text")
-        if text.strip():
-            pages.append(text)
-    doc.close()
-    return "\n\n".join(pages)
 
 
 def _read_docx(path: Path) -> str:
@@ -86,68 +92,48 @@ def write_output(text: str, path: str) -> None:
 # Default output path helper
 # ---------------------------------------------------------------------------
 
-def default_output_path(input_path: str) -> str:
-    """Generate a default output path from the input path.
+def default_output_path(
+    input_path: str,
+    lang: str = "en",
+    slice_tag: Optional[str] = None,
+) -> str:
+    """Generate a default output path from input path, language, and optional slice tag.
 
-    e.g.  book.pdf  →  book_translated.md
+    e.g.  book.pdf, lang="da", slice_tag="p10-25"  →  book_p10-25_translated_da.md
     """
     p = Path(input_path)
-    return str(p.with_name(f"{p.stem}_translated.md"))
+    lang_suffix = f"_{lang.lower()}" if lang.lower() != "en" else ""
+    tag_part = f"_{slice_tag}" if slice_tag else ""
+    return str(p.with_name(f"{p.stem}{tag_part}_translated{lang_suffix}.md"))
 
 
-# ---------------------------------------------------------------------------
-# Text chunking
-# ---------------------------------------------------------------------------
+def default_audit_path(output_path: str) -> str:
+    """Generate a default audit report path corresponding to a translation output path.
 
-def chunk_text(text: str, max_tokens: int = 1500) -> List[str]:
-    """Split Arabic text into chunks of roughly *max_tokens* tokens.
-
-    We approximate tokens as ``len(text) / 2`` for Arabic (conservative).
-    Splits happen at paragraph boundaries (double newlines) first,
-    then at sentence boundaries (period + space) if paragraphs are too long.
+    e.g.  book_translated_da.md  →  book_translated_da_audit.md
     """
-    # Target character count (rough: 1 Arabic token ≈ 2 chars on average)
-    max_chars = max_tokens * 2
+    p = Path(output_path)
+    return str(p.with_name(f"{p.stem}_audit.md"))
 
-    paragraphs = re.split(r"\n{2,}", text.strip())
-    chunks: List[str] = []
-    current_chunk: List[str] = []
-    current_len = 0
 
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
-            continue
+def default_pdf_path(output_path: str) -> str:
+    """Generate a default PDF path corresponding to a translation output path.
 
-        para_len = len(para)
+    e.g.  book_translated_da.md  →  book_translated_da.pdf
+    """
+    p = Path(output_path)
+    return str(p.with_suffix(".pdf"))
 
-        # If appending this paragraph would exceed the limit, flush current
-        if current_len + para_len > max_chars and current_chunk:
-            chunks.append("\n\n".join(current_chunk))
-            current_chunk = []
-            current_len = 0
 
-        # If a single paragraph exceeds the limit, split by sentences
-        if para_len > max_chars:
-            sentences = re.split(r"(?<=[.؟!])\s+", para)
-            sub_chunk: List[str] = []
-            sub_len = 0
-            for sent in sentences:
-                sent_len = len(sent)
-                if sub_len + sent_len > max_chars and sub_chunk:
-                    chunks.append(" ".join(sub_chunk))
-                    sub_chunk = []
-                    sub_len = 0
-                sub_chunk.append(sent)
-                sub_len += sent_len
-            if sub_chunk:
-                current_chunk.append(" ".join(sub_chunk))
-                current_len += sub_len
-        else:
-            current_chunk.append(para)
-            current_len += para_len
 
-    if current_chunk:
-        chunks.append("\n\n".join(current_chunk))
+# ---------------------------------------------------------------------------
+# Text chunking (re-exported from translator.chunker)
+# ---------------------------------------------------------------------------
 
-    return chunks
+from translator.chunker import (
+    TextChunk,
+    chunk_classical_arabic,
+    chunk_text,
+    count_tokens,
+)
+
