@@ -46,11 +46,15 @@ def build_system_prompt(target_lang: str = "en", domain: str = "mantiq", inline_
     bilingual_rule = ""
     if inline_arabic:
         bilingual_rule = """
-9. **Strict Paragraph Correspondence for Bilingual Alignment**:
-   - The source Arabic text is structured in distinct paragraphs separated by blank lines.
-   - You MUST maintain the EXACT same paragraph structure and count in your output.
-   - Output exactly one translated paragraph for each source Arabic paragraph.
-   - Do NOT merge separate Arabic paragraphs into one, and do NOT split one Arabic paragraph into multiple paragraphs.
+9. **Strict Paragraph Tag Correspondence for Bilingual Alignment**:
+   - The source Arabic text is divided into numbered paragraphs tagged [P1], [P2], [P3], etc.
+   - You MUST translate each paragraph individually and precede each translated paragraph with its EXACT matching tag:
+     [P1] (Translation of paragraph 1)
+
+     [P2] (Translation of paragraph 2)
+
+     [P3] (Translation of paragraph 3)
+   - Do NOT omit any paragraph tag, do NOT merge multiple paragraphs under one tag, and do NOT alter tag numbering.
 """
 
     return f"""\
@@ -137,10 +141,20 @@ Do not re-translate the preceding context. Do not output the original Arabic.
 """
 
 
-def build_verifier_system_prompt(target_lang: str = "en", domain: str = "mantiq") -> str:
+def build_verifier_system_prompt(target_lang: str = "en", domain: str = "mantiq", inline_arabic: bool = False) -> str:
     """Construct an expert proofreader/auditor system prompt to detect and fix smooth hallucinations."""
     lang_name = get_language_name(target_lang)
     domain_desc = DOMAIN_DESCRIPTIONS.get(domain.lower(), DOMAIN_DESCRIPTIONS["general"])
+
+    tag_criterion = ""
+    tag_output_note = ""
+    if inline_arabic:
+        tag_criterion = """
+7. **Paragraph Tag Preservation**:
+   - The candidate translation is structured with paragraph tags [P1], [P2], etc.
+   - You MUST preserve all paragraph tags [P1], [P2], etc. exactly in your verified translation.
+"""
+        tag_output_note = " Preserve all [P1], [P2], etc. tags."
 
     return f"""\
 You are an expert Scholastic Auditor and Proofreader specializing in verifying translations of \
@@ -172,7 +186,7 @@ Examine the candidate translation against the following 5 strict audit criteria:
 
 6. **Novel Terminology Identification**:
    - Identify any novel scholastic technical terms introduced or defined in this section that are not in the standard domain glossary.
-   - Note their established {lang_name} equivalents so consistency is maintained in subsequent chapters.
+   - Note their established {lang_name} equivalents so consistency is maintained in subsequent chapters.{tag_criterion}
 
 OUTPUT FORMAT:
 Your response must strictly follow this exact structure:
@@ -186,7 +200,7 @@ Your response must strictly follow this exact structure:
 If none were introduced, write: None]
 
 ### VERIFIED TRANSLATION:
-[Output the COMPLETE, polished, full {lang_name} translation for this entire section. Do NOT omit any text. Do not output the original Arabic.]
+[Output the COMPLETE, polished, full {lang_name} translation for this entire section.{tag_output_note} Do NOT omit any text. Do not output the original Arabic.]
 CRITICAL: You must ALWAYS output the entire translated text under ### VERIFIED TRANSLATION:. Never stop after writing notes.
 """
 

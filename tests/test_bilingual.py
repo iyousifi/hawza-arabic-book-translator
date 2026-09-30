@@ -56,6 +56,24 @@ class TestBilingual(unittest.TestCase):
         self.assertIn("الفقرة الثانية.", combined_ar)
         self.assertIn("الفقرة الثالثة.", combined_ar)
 
+    def test_tag_arabic_paragraphs(self):
+        from translator.bilingual import tag_arabic_paragraphs
+
+        ar = "الفقرة الأولى.\n\nالفقرة الثانية."
+        tagged, raw = tag_arabic_paragraphs(ar)
+        self.assertEqual(len(raw), 2)
+        self.assertIn("[P1]\nالفقرة الأولى.", tagged)
+        self.assertIn("[P2]\nالفقرة الثانية.", tagged)
+
+    def test_pair_with_explicit_tags(self):
+        ar = "الفقرة الأولى.\n\nالفقرة الثانية."
+        # LLM returns tagged translation
+        tr = "[P1] Første afsnit oversættelse.\n\n[P2] Andet afsnit oversættelse."
+        pairs = pair_bilingual_paragraphs(ar, tr)
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0], ("الفقرة الأولى.", "Første afsnit oversættelse."))
+        self.assertEqual(pairs[1], ("الفقرة الثانية.", "Andet afsnit oversættelse."))
+
     def test_format_bilingual_markdown(self):
         ar = "المقدمة في علم المنطق."
         tr = "Indledning til logikkens videnskab."

@@ -283,7 +283,40 @@ def classify_page_blocks(
         else:
             body_blocks.append(blk.text)
 
-    return body_blocks, footnote_blocks
+    # Reassemble blocks that were fragmented across line wraps in the PDF
+    merged_body = merge_fragmented_blocks(body_blocks)
+    return merged_body, footnote_blocks
+
+
+def merge_fragmented_blocks(blocks: List[str]) -> List[str]:
+    """Merge PDF text blocks that were split mid-sentence or mid-paragraph.
+
+    If a block does not end with terminal punctuation (. ! ؟ :) and the next
+    block is not a section heading or bullet point, merge them into a single paragraph.
+    """
+    merged: List[str] = []
+    heading_re = re.compile(
+        r"^(?:#+|\d+[\-.)]|[-•*]|[:\s]*(?:المقصد|الباب|الفصل|المبحث|المسألة|الدرس|العنوان|كلمة|مدخل))"
+    )
+    terminal_re = re.compile(r"[.!:؟]\s*$")
+
+    for b in blocks:
+        clean = b.strip()
+        if not clean:
+            continue
+        if not merged:
+            merged.append(clean)
+            continue
+        prev = merged[-1]
+        prev_has_terminal = bool(terminal_re.search(prev))
+        prev_is_heading = bool(heading_re.match(prev)) or len(prev) < 40 and not prev.endswith((".", "،"))
+        curr_is_heading = bool(heading_re.match(clean))
+
+        if not prev_has_terminal and not prev_is_heading and not curr_is_heading:
+            merged[-1] = f"{prev} {clean}"
+        else:
+            merged.append(clean)
+    return merged
 
 
 def _detect_multi_column(blocks: List[PageBlock], page_width: float) -> bool:

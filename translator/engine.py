@@ -478,13 +478,21 @@ def translate(
                 else None
             )
 
+            # Prepare source text (tagged with [P1], [P2] if inline_arabic is enabled)
+            if cfg.inline_arabic:
+                from translator.bilingual import tag_arabic_paragraphs
+
+                chunk_to_translate, _ = tag_arabic_paragraphs(chunk_item.text)
+            else:
+                chunk_to_translate = chunk_item.text
+
             # --- Pass 1: Translation Draft ---
             progress.update(
                 task,
                 description=f"Chunk {i + 1}/{total} (Pass 1: Drafting)",
             )
             draft = translate_fn(
-                chunk=chunk_item.text,
+                chunk=chunk_to_translate,
                 system_prompt=system_prompt,
                 cfg=cfg,
                 prev_target_context=prev_target,
@@ -500,7 +508,7 @@ def translate(
                 )
                 audit_res = verify_chunk(
                     draft_translation=draft,
-                    arabic_chunk=chunk_item.text,
+                    arabic_chunk=chunk_to_translate,
                     cfg=cfg,
                     glossary_text=glossary_text,
                     session_terms_block=session_terms_block,

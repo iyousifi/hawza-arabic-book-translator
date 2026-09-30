@@ -231,6 +231,7 @@ def verify_chunk(
     system_prompt = build_verifier_system_prompt(
         target_lang=cfg.target_lang,
         domain=cfg.domain,
+        inline_arabic=cfg.inline_arabic,
     )
     if glossary_text:
         system_prompt += GLOSSARY_ADDENDUM_TEMPLATE.format(

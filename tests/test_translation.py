@@ -215,6 +215,23 @@ class TestSmartNormalizer(unittest.TestCase):
             if tmp_path.exists():
                 tmp_path.unlink()
 
+    def test_merge_fragmented_blocks(self):
+        from translator.normalizer import merge_fragmented_blocks
+
+        blocks = [
+            ":الدرس الثاني",
+            "تطور البحث المنطقي",
+            "يستهدف هذا التمهيد بيان الموضوعات التي سيتناولها هذا القسم،",
+            "كما يستهدف بيان المنهجية التي يتبعها الكتاب.",
+            "مدخل:",
+            "في حديثنا عن تطور المنطق نلقي نظرة على الأدوار.",
+        ]
+        merged = merge_fragmented_blocks(blocks)
+        # Heading :الدرس الثاني should be separate
+        self.assertEqual(merged[0], ":الدرس الثاني")
+        # Broken lines should be merged
+        self.assertIn("يستهدف هذا التمهيد بيان الموضوعات التي سيتناولها هذا القسم، كما يستهدف بيان المنهجية التي يتبعها الكتاب.", merged)
+
 
 
 class TestDryRunTranslation(unittest.TestCase):
