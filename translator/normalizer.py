@@ -192,7 +192,8 @@ def classify_page_blocks(
     remove_headers_footers: bool = True,
     separate_footnotes: bool = True,
     exclude_margin_rubrics: bool = True,
-) -> Tuple[List[str], List[str]]:
+    return_rubrics: bool = False,
+) -> Tuple[List[str], List[str]] | Tuple[List[str], List[str], List[str]]:
     """Classify extracted PDF blocks into body text and footnotes.
 
     Parameters
@@ -209,11 +210,13 @@ def classify_page_blocks(
         Whether to identify and separate bottom commentary/footnotes.
     exclude_margin_rubrics:
         Whether to exclude vertical margin tabs and side ribbons (e.g. 'مدخل') from body text.
+    return_rubrics:
+        Whether to return the list of cleaned margin rubric titles as a third tuple element.
 
     Returns
     -------
-    Tuple[List[str], List[str]]
-        (body_blocks, footnote_blocks)
+    Tuple[List[str], List[str]] | Tuple[List[str], List[str], List[str]]
+        (body_blocks, footnote_blocks) or (body_blocks, footnote_blocks, rubric_texts)
     """
     classified: List[PageBlock] = []
 
@@ -284,9 +287,16 @@ def classify_page_blocks(
     footnote_started = False
     body_blocks: List[str] = []
     footnote_blocks: List[str] = []
+    rubric_texts: List[str] = []
 
     for blk in classified:
-        if blk.is_header_or_footer or blk.is_margin_rubric:
+        if blk.is_margin_rubric:
+            clean_rubric = "".join(c for c in blk.text if c not in ("ـ", " ", "\n", "\r", "\t"))
+            if clean_rubric and clean_rubric not in rubric_texts:
+                rubric_texts.append(clean_rubric)
+            continue
+
+        if blk.is_header_or_footer:
             continue
 
         if separate_footnotes:
@@ -307,6 +317,8 @@ def classify_page_blocks(
 
     # Reassemble blocks that were fragmented across line wraps in the PDF
     merged_body = merge_fragmented_blocks(body_blocks)
+    if return_rubrics:
+        return merged_body, footnote_blocks, rubric_texts
     return merged_body, footnote_blocks
 
 
@@ -318,7 +330,7 @@ def merge_fragmented_blocks(blocks: List[str]) -> List[str]:
     """
     merged: List[str] = []
     heading_re = re.compile(
-        r"^(?:#+|\d+[\-.)]|[-•*]|[:\s]*(?:المقصد|الباب|الفصل|المبحث|المسألة|الدرس|العنوان|كلمة|مدخل))"
+        r"^(?:#+|\d+[\-.)]|[-•*]\s+|[:\s]*(?:المقصد|الباب|الفصل|المبحث|المسألة|الدرس|العنوان|كلمة))"
     )
     terminal_re = re.compile(r"[.!:؟]\s*$")
     list_end_re = re.compile(r"[-–—.]?\s*[\d٠-٩]+[-–—.]?\s*$")
@@ -373,6 +385,38 @@ def _detect_multi_column(blocks: List[PageBlock], page_width: float) -> bool:
 # PDF Reader using Smart Normalization
 # ---------------------------------------------------------------------------
 
+def _extract_blocks_with_styling(page: Any) -> List[Tuple[float, float, float, float, str, int, int]]:
+    """Extract page blocks while preserving royal blue (0x24408f) span styling."""
+    try:
+        dict_data = page.get_text("dict")
+        blocks: List[Tuple[float, float, float, float, str, int, int]] = []
+        for idx, b in enumerate(dict_data.get("blocks", [])):
+            if "lines" not in b:
+                continue
+            x0, y0, x1, y1 = b["bbox"]
+            line_strings = []
+            for l in b["lines"]:
+                spans = l.get("spans", [])
+                line_parts = []
+                for s in spans:
+                    t = s.get("text", "")
+                    if not t:
+                        continue
+                    color = s.get("color", 0)
+                    if color == 0x24408f and len(t.strip()) > 1 and len(spans) > 1:
+                        line_parts.append(f"**{t.strip()}** ")
+                    else:
+                        line_parts.append(t)
+                line_strings.append("".join(line_parts))
+            block_text = "\n".join(line_strings)
+            blocks.append((x0, y0, x1, y1, block_text, idx, 0))
+        if blocks:
+            return blocks
+    except Exception:
+        pass
+    return page.get_text("blocks")
+
+
 def extract_text_from_pdf(
     path: Path | str,
     remove_headers_footers: bool = True,
@@ -418,20 +462,27 @@ def extract_text_from_pdf(
 
     for page_idx in range(start_idx, end_idx):
         page = doc[page_idx]
-        # Extract blocks: (x0, y0, x1, y1, text, block_no, block_type)
-        blocks = page.get_text("blocks")
+        blocks = _extract_blocks_with_styling(page)
         rect = page.rect
 
-        body_blocks, footnote_blocks = classify_page_blocks(
+        body_blocks, footnote_blocks, rubric_texts = classify_page_blocks(
             blocks=blocks,
             page_width=rect.width,
             page_height=rect.height,
             remove_headers_footers=remove_headers_footers,
             separate_footnotes=separate_footnotes,
             exclude_margin_rubrics=exclude_margin_rubrics,
+            return_rubrics=True,
         )
 
         page_parts: List[str] = []
+        if rubric_texts and body_blocks:
+            rubric_tag = "\n".join(f"<!-- rubric: {r} -->" for r in rubric_texts)
+            body_blocks[0] = f"{rubric_tag}\n{body_blocks[0]}"
+        elif rubric_texts:
+            for r in rubric_texts:
+                page_parts.append(f"<!-- rubric: {r} -->")
+
         if body_blocks:
             page_parts.append("\n\n".join(body_blocks))
 

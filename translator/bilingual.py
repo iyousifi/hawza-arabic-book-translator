@@ -20,11 +20,30 @@ _STRICT_TAG_RE = re.compile(
 
 
 def split_into_paragraphs(text: str) -> List[str]:
-    """Split text into distinct non-empty paragraphs by double newlines."""
+    """Split text into distinct non-empty paragraphs by double newlines.
+
+    Attaches any standalone <!-- rubric: ... --> comments as a prefix to the
+    subsequent paragraph so they don't count as isolated translation blocks.
+    """
     if not text:
         return []
     raw_paras = re.split(r"\n\s*\n+", text.strip())
-    return [p.strip() for p in raw_paras if p.strip()]
+    cleaned_paras: List[str] = []
+    pending_prefix = ""
+    for p in raw_paras:
+        clean = p.strip()
+        if not clean:
+            continue
+        if re.match(r"^<!--\s*rubric:\s*.*?\s*-->$", clean, re.IGNORECASE):
+            pending_prefix = clean + "\n"
+            continue
+        if pending_prefix:
+            clean = pending_prefix + clean
+            pending_prefix = ""
+        cleaned_paras.append(clean)
+    if pending_prefix and cleaned_paras:
+        cleaned_paras[-1] = pending_prefix + cleaned_paras[-1]
+    return cleaned_paras
 
 
 def tag_arabic_paragraphs(arabic_text: str) -> Tuple[str, List[str]]:

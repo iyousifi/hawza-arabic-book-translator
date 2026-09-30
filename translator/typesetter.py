@@ -89,9 +89,21 @@ def markdown_to_typst_content(md_text: str) -> str:
     pending_arabic = None
     pending_tr_lines = []
 
+    rubric_tag_re = re.compile(r"<!--\s*rubric:\s*(.*?)\s*-->|\[RUBRIC:\s*(.*?)\]", re.IGNORECASE)
+
+    def extract_and_emit_rubric(text: str) -> str:
+        match = rubric_tag_re.search(text)
+        if match:
+            r_val = (match.group(1) or match.group(2) or "").strip()
+            if r_val:
+                lines.append(f"\n#margin_tab[{r_val}]\n")
+            return rubric_tag_re.sub("", text).strip()
+        return text
+
     def flush_bilingual():
         nonlocal pending_arabic, pending_tr_lines
         if pending_arabic:
+            pending_arabic = extract_and_emit_rubric(pending_arabic)
             if pending_tr_lines:
                 tr_content = "\n".join(pending_tr_lines).strip()
                 lines.append(f"\n#bilingual_item[\n  {pending_arabic}\n][\n  {tr_content}\n]\n")
@@ -104,6 +116,7 @@ def markdown_to_typst_content(md_text: str) -> str:
         nonlocal in_blockquote, blockquote_lines, pending_arabic
         if blockquote_lines:
             content = " ".join(blockquote_lines).strip()
+            content = extract_and_emit_rubric(content)
             is_arabic_source = "📜" in content or "الأصل العربي" in content or bool(re.search(r"[\u0600-\u06FF]{6,}", content))
             if is_arabic_source:
                 flush_bilingual()
@@ -122,6 +135,13 @@ def markdown_to_typst_content(md_text: str) -> str:
 
     for line in body.splitlines():
         trimmed = line.strip()
+
+        # Standalone margin rubric tag
+        if rubric_tag_re.search(trimmed) and not trimmed.startswith(">"):
+            if pending_arabic and pending_tr_lines:
+                flush_bilingual()
+            extract_and_emit_rubric(trimmed)
+            continue
 
         # Blockquote check
         if trimmed.startswith(">"):
@@ -241,6 +261,7 @@ def build_typst_document(
 #set enum(numbering: (n) => text(fill: rgb("#d2232a"), weight: "bold")[#n. ])
 #set list(marker: text(fill: rgb("#d2232a"), weight: "bold")[•])
 
+#show strong: set text(fill: rgb("#24408f"))
 #show heading: set text(fill: rgb("#24408f"), font: ("Georgia", "Times New Roman"))
 #show heading.where(level: 1): it => block(spacing: 1.5em)[
   #text(fill: rgb("#2e3092"), weight: "bold", font: ("Georgia", "Times New Roman"), size: 16pt)[#it.body]
@@ -251,6 +272,27 @@ def build_typst_document(
 #show heading.where(level: 3): it => block(spacing: 1.0em)[
   #text(fill: rgb("#24408f"), weight: "bold", font: ("Georgia", "Times New Roman"), size: 11pt)[#it.body]
 ]
+
+// Vertical margin rubric tab placed in outer margin (alternating for odd/even pages)
+#let margin_tab(title) = context {{
+  let page-num = counter(page).get().first()
+  let is-even = calc.even(page-num)
+  place(
+    top + if is-even {{ left }} else {{ right }},
+    dx: if is-even {{ -2.1cm }} else {{ 2.1cm }},
+    dy: 4.5cm,
+    block(
+      fill: rgb("#c27258"),
+      radius: if is-even {{ (right: 4pt) }} else {{ (left: 4pt) }},
+      inset: (x: 4pt, y: 14pt),
+      align(center)[
+        #rotate(if is-even {{ 90deg }} else {{ -90deg }}, reflow: true)[
+          #text(fill: white, weight: "bold", size: 10pt, tracking: 1.5pt)[#title]
+        ]
+      ]
+    )
+  )
+}}
 
 #let hawza_callout(content) = block(
   width: 100%,

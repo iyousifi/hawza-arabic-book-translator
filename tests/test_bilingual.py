@@ -84,6 +84,19 @@ class TestBilingual(unittest.TestCase):
         self.assertIn("> المقدمة في علم المنطق.", formatted)
         self.assertIn("Indledning til logikkens videnskab.", formatted)
 
+    def test_split_into_paragraphs_with_rubric(self):
+        text = "<!-- rubric: مدخل -->\n\nFørste afsnit.\n\nAndet afsnit."
+        paras = split_into_paragraphs(text)
+        self.assertEqual(len(paras), 2)
+        self.assertIn("<!-- rubric: مدخل -->", paras[0])
+        self.assertIn("Første afsnit.", paras[0])
+        self.assertEqual(paras[1], "Andet afsnit.")
+
+    def test_markdown_to_typst_margin_tab(self):
+        md = "<!-- rubric: مدخل -->\n\nTekst her."
+        typst_code = markdown_to_typst_content(md)
+        self.assertIn("#margin_tab[مدخل]", typst_code)
+
     def test_typesetter_converts_arabic_block(self):
         md = """> 📜 **[الأصل العربي]**:
 > هذه المقدمة تستهدف إيضاح الموضوعات التي سيعالجها هذا الجزء.
