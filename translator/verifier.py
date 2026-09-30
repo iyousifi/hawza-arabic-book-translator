@@ -113,6 +113,31 @@ def parse_verification_response(
                 r"^###\s*AUDIT\s+NOTES:\s*", "", audit_part, flags=re.IGNORECASE
             ).strip()
 
+    # Fail-safe tag preservation for bilingual mode:
+    # If fallback_translation was tagged with [P1], [P2], etc., ensure that
+    # any missing or truncated tags in the verified output are backfilled from the draft.
+    if fallback_translation:
+        from translator.bilingual import parse_tagged_paragraphs
+
+        draft_tags = parse_tagged_paragraphs(fallback_translation)
+        if draft_tags:
+            verified_tags = parse_tagged_paragraphs(verified)
+            missing = [
+                idx for idx in draft_tags if idx not in verified_tags or not verified_tags[idx].strip()
+            ]
+            if missing:
+                console.print(
+                    f"  [dim yellow]⚠️ Verifier response missed/truncated {len(missing)} tag(s) "
+                    f"({missing[:5]}{'...' if len(missing) > 5 else ''}); backfilled from Pass 1 draft.[/dim yellow]"
+                )
+                for idx in missing:
+                    verified_tags[idx] = draft_tags[idx]
+
+                reconstructed = [
+                    f"[P{idx}]\n{verified_tags[idx]}" for idx in sorted(verified_tags.keys())
+                ]
+                verified = "\n\n".join(reconstructed)
+
     if extract_terms:
         return audit_notes, verified, novel_terms
     return audit_notes, verified

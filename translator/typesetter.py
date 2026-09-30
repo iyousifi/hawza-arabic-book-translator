@@ -86,19 +86,31 @@ def markdown_to_typst_content(md_text: str) -> str:
     lines = []
     in_blockquote = False
     blockquote_lines = []
+    pending_arabic = None
+    pending_tr_lines = []
+
+    def flush_bilingual():
+        nonlocal pending_arabic, pending_tr_lines
+        if pending_arabic:
+            if pending_tr_lines:
+                tr_content = "\n".join(pending_tr_lines).strip()
+                lines.append(f"\n#bilingual_item[\n  {pending_arabic}\n][\n  {tr_content}\n]\n")
+                pending_tr_lines = []
+            else:
+                lines.append(f"\n#arabic_block[\n  {pending_arabic}\n]\n")
+            pending_arabic = None
 
     def flush_blockquote() -> None:
-        nonlocal in_blockquote, blockquote_lines
+        nonlocal in_blockquote, blockquote_lines, pending_arabic
         if blockquote_lines:
             content = " ".join(blockquote_lines).strip()
-            # Check if this is an Arabic source block
             is_arabic_source = "📜" in content or "الأصل العربي" in content or bool(re.search(r"[\u0600-\u06FF]{6,}", content))
             if is_arabic_source:
-                # Clean header prefix if present
+                flush_bilingual()
                 clean_ar = re.sub(r"^[📜\s*]*\[?الأصل العربي\]?[:\s*]*", "", content).strip()
-                lines.append(f"\n#arabic_block[\n  {clean_ar}\n]\n")
+                pending_arabic = clean_ar
             else:
-                # Distinguish Quranic verses or Hadith
+                flush_bilingual()
                 is_sacred = any(
                     kw in content.lower()
                     for kw in ["qur'an", "koran", "hadith", "riwayah", "profeten", "imam", "«", "»", "allah"]
@@ -113,12 +125,31 @@ def markdown_to_typst_content(md_text: str) -> str:
 
         # Blockquote check
         if trimmed.startswith(">"):
+            if pending_arabic and pending_tr_lines:
+                flush_bilingual()
             in_blockquote = True
             quote_text = trimmed.lstrip("> ").strip()
             blockquote_lines.append(quote_text)
             continue
         elif in_blockquote:
             flush_blockquote()
+
+        # If we have a pending Arabic block, check if this line is part of its translation
+        if pending_arabic is not None:
+            if not trimmed:
+                if pending_tr_lines:
+                    flush_bilingual()
+                continue
+            # If line is a heading or divider, flush bilingual first
+            if trimmed.startswith("#") or re.match(r"^[-*_]{3,}$", trimmed):
+                flush_bilingual()
+            else:
+                # Accumulate translation line
+                if trimmed.startswith("- "):
+                    pending_tr_lines.append(f"- {trimmed[2:].strip()}")
+                else:
+                    pending_tr_lines.append(trimmed)
+                continue
 
         # Horizontal rules
         if re.match(r"^[-*_]{3,}$", trimmed):
@@ -147,6 +178,7 @@ def markdown_to_typst_content(md_text: str) -> str:
             lines.append(line)
 
     flush_blockquote()
+    flush_bilingual()
     return "\n".join(lines)
 
 
@@ -242,6 +274,16 @@ def build_typst_document(
   #set text(font: ("Amiri", "Traditional Arabic", "Scheherazade New", "Segoe UI"), size: 11pt, dir: rtl, lang: "ar")
   #set par(justify: true, leading: 0.85em, first-line-indent: 0pt)
   #content
+]
+
+#let bilingual_item(arabic, translation) = block(
+  width: 100%,
+  breakable: false,
+  spacing: 1.1em,
+)[
+  #arabic_block[#arabic]
+  #v(0.25em)
+  #translation
 ]
 
 // --- Front Matter / Academic Title Page ---

@@ -9,8 +9,14 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Tuple
 
-_PARAGRAPH_TAG_RE = re.compile(r"\[P?(\d+)\]", re.IGNORECASE)
-_TAGGED_SECTION_RE = re.compile(r"\[P?(\d+)\]\s*(.*?)(?=\n\s*\[P?\d+\]|\Z)", re.DOTALL | re.IGNORECASE)
+_STRICT_TAG_RE = re.compile(
+    r"(?:^|\n)\s*(?:[#*_\-]+\s*)?"          # optional leading markdown (###, **, -)
+    r"(?:\[\s*P?\s*(\d+)\s*\]"             # [P1] or [1] or [P 1]
+    r"|P\s*(\d+)\s*[:\-–—.)])"             # or P1: or P1. or P 1:
+    r"[:\-–—.)]*"                           # optional trailing colon/period
+    r"(?:\s*[*_]+)?\s*",                   # optional trailing bold/italic
+    re.IGNORECASE,
+)
 
 
 def split_into_paragraphs(text: str) -> List[str]:
@@ -45,17 +51,31 @@ def parse_tagged_paragraphs(text: str) -> Dict[int, str]:
     if not text:
         return {}
 
-    matches = _TAGGED_SECTION_RE.findall(text)
-    if matches:
-        return {int(idx): content.strip() for idx, content in matches if content.strip()}
-    return {}
+    matches = list(_STRICT_TAG_RE.finditer(text))
+    if not matches:
+        return {}
+
+    result: Dict[int, str] = {}
+    for i, m in enumerate(matches):
+        idx_str = m.group(1) or m.group(2)
+        if not idx_str:
+            continue
+        idx = int(idx_str)
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        content = text[start:end].strip()
+        if content:
+            result[idx] = content
+    return result
 
 
 def clean_paragraph_tags(text: str) -> str:
     """Remove [P1], [P2], etc. tags from text."""
     if not text:
         return ""
-    cleaned = _PARAGRAPH_TAG_RE.sub("", text)
+    cleaned = _STRICT_TAG_RE.sub("\n", text)
+    # Also clean any inline [P1] or [1] remnants
+    cleaned = re.sub(r"\[\s*P?\s*\d+\s*\]", "", cleaned, flags=re.IGNORECASE)
     # Collapse multiple leading whitespace on lines
     cleaned = re.sub(r"^[ \t]+", "", cleaned, flags=re.MULTILINE)
     return cleaned.strip()

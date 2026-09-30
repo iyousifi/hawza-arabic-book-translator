@@ -161,6 +161,10 @@ def normalize_arabic_text(
     recomposed = re.sub(r"[ \t]+", " ", recomposed)
     recomposed = re.sub(r"\n{3,}", "\n\n", recomposed)
 
+    # Step 9: Clean line-start punctuation artifacts (e.g. leading commas '،', inverted colons ':الدرس')
+    recomposed = re.sub(r"(?m)^:\s*([\u0600-\u06FF\s]+)$", r"\1:", recomposed)
+    recomposed = re.sub(r"(?m)^[،,:]\s*", "", recomposed)
+
     return recomposed.strip()
 
 
@@ -253,8 +257,8 @@ def classify_page_blocks(
         # Multi-column sorting: right column (higher x0) first, then by y0
         classified.sort(key=lambda blk: (0 if blk.x0 > page_width * 0.45 else 1, blk.y0))
     else:
-        # Single column: top-to-bottom
-        classified.sort(key=lambda blk: blk.y0)
+        # Single column: sort by vertical bands (12pt height tolerance) and RTL descending x0
+        classified.sort(key=lambda blk: (round(blk.y0 / 12.0), -blk.x0))
 
     # Footnote boundary detection:
     # Footnotes in classical Hawza books appear at the bottom 35% of the page
@@ -299,6 +303,8 @@ def merge_fragmented_blocks(blocks: List[str]) -> List[str]:
         r"^(?:#+|\d+[\-.)]|[-•*]|[:\s]*(?:المقصد|الباب|الفصل|المبحث|المسألة|الدرس|العنوان|كلمة|مدخل))"
     )
     terminal_re = re.compile(r"[.!:؟]\s*$")
+    list_end_re = re.compile(r"[-–—.]?\s*[\d٠-٩]+[-–—.]?\s*$")
+    list_start_re = re.compile(r"^[\s.ـ]*[-–—]?\s*[\d٠-٩]+[\-.)]")
 
     for b in blocks:
         clean = b.strip()
@@ -308,11 +314,24 @@ def merge_fragmented_blocks(blocks: List[str]) -> List[str]:
             merged.append(clean)
             continue
         prev = merged[-1]
-        prev_has_terminal = bool(terminal_re.search(prev))
-        prev_is_heading = bool(heading_re.match(prev)) or len(prev) < 40 and not prev.endswith((".", "،"))
-        curr_is_heading = bool(heading_re.match(clean))
 
-        if not prev_has_terminal and not prev_is_heading and not curr_is_heading:
+        # 1. Header label "العنوان" followed by title text
+        if prev in ("العنوان", "عنوان", "الموضوع") and len(clean) < 60:
+            merged[-1] = f"{prev}: {clean}"
+            continue
+
+        prev_has_terminal = (
+            bool(terminal_re.search(prev))
+            or bool(list_end_re.search(prev))
+        )
+        prev_is_heading = (
+            bool(heading_re.match(prev))
+            or (len(prev) < 40 and not prev.endswith((".", "،")))
+        )
+        curr_is_heading = bool(heading_re.match(clean))
+        curr_is_list = bool(list_start_re.match(clean))
+
+        if not prev_has_terminal and not prev_is_heading and not curr_is_heading and not curr_is_list:
             merged[-1] = f"{prev} {clean}"
         else:
             merged.append(clean)

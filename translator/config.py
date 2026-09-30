@@ -150,11 +150,12 @@ def build_verifier_system_prompt(target_lang: str = "en", domain: str = "mantiq"
     tag_output_note = ""
     if inline_arabic:
         tag_criterion = """
-7. **Paragraph Tag Preservation**:
+7. **Complete Paragraph Tag Preservation**:
    - The candidate translation is structured with paragraph tags [P1], [P2], etc.
-   - You MUST preserve all paragraph tags [P1], [P2], etc. exactly in your verified translation.
+   - You MUST include EVERY paragraph tag ([P1] through the final [Pn]) in your verified translation.
+   - Never truncate, stop midway, or omit any paragraph tag.
 """
-        tag_output_note = " Preserve all [P1], [P2], etc. tags."
+        tag_output_note = " You MUST preserve all paragraph tags [P1], [P2], etc., covering EVERY single paragraph from [P1] to the end."
 
     return f"""\
 You are an expert Scholastic Auditor and Proofreader specializing in verifying translations of \
@@ -227,7 +228,7 @@ Apply the 5 scholastic audit criteria. You must format your response using these
 [Novel term equivalents, or "None"]
 
 ### VERIFIED TRANSLATION:
-[Provide the FULL, COMPLETE {target_lang_name} translation with all corrections applied.]
+[Provide the FULL, COMPLETE {target_lang_name} translation for the entire section with all corrections applied. In bilingual mode, preserve all [P1], [P2], etc. tags covering every paragraph without omission or early truncation.]
 """
 
 
@@ -240,7 +241,7 @@ class ModelConfig:
     target_lang: str = "en"           # target language code ("en", "da", "sw", etc.)
     domain: str = "mantiq"            # "mantiq", "fiqh", or "general"
     temperature: float = 0.2          # lower temperature for high scholastic fidelity
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 8192
     chunk_size: int = 1500            # target tokens per chunk
     overlap_tokens: int = 200         # context tokens from previous chunk
     chunk_delay: float = 4.0          # seconds between API calls (rate-limit guard)

@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 
 from translator.bilingual import (
+    clean_paragraph_tags,
     format_bilingual_markdown,
     pair_bilingual_paragraphs,
+    parse_tagged_paragraphs,
     split_into_paragraphs,
 )
 from translator.typesetter import (
@@ -89,7 +91,7 @@ class TestBilingual(unittest.TestCase):
 Denne indledning har til formål at klargøre emnerne.
 """
         typst_content = markdown_to_typst_content(md)
-        self.assertIn("#arabic_block[", typst_content)
+        self.assertTrue("#bilingual_item[" in typst_content or "#arabic_block[" in typst_content)
         self.assertIn("هذه المقدمة تستهدف إيضاح الموضوعات", typst_content)
         self.assertIn("Denne indledning har til formål at klargøre emnerne.", typst_content)
 
@@ -111,6 +113,79 @@ Denne indledning har til formål at klargøre emnerne.
             )
             self.assertTrue(out_pdf.exists())
             self.assertGreater(out_pdf.stat().st_size, 5000)
+
+    def test_parse_tagged_paragraphs_variations(self):
+        text = """
+[P1]
+Første afsnit.
+
+**[P2]**
+Andet afsnit.
+
+[P 3]:
+Tredje afsnit.
+
+### [P4]
+Fjerde afsnit med indre liste:
+1. Underpunkt et
+2. Underpunkt to
+
+P5:
+Femte afsnit.
+
+**P6:**
+Sjette afsnit.
+"""
+        parsed = parse_tagged_paragraphs(text)
+        self.assertEqual(len(parsed), 6)
+        self.assertEqual(parsed[1], "Første afsnit.")
+        self.assertEqual(parsed[2], "Andet afsnit.")
+        self.assertEqual(parsed[3], "Tredje afsnit.")
+        self.assertIn("Fjerde afsnit med indre liste:", parsed[4])
+        self.assertIn("1. Underpunkt et", parsed[4])
+        self.assertEqual(parsed[5], "Femte afsnit.")
+        self.assertEqual(parsed[6], "Sjette afsnit.")
+
+    def test_verifier_backfill_missing_tags(self):
+        from translator.verifier import parse_verification_response
+
+        draft = """[P1]
+Første kladde.
+
+[P2]
+Anden kladde.
+
+[P3]
+Tredje kladde.
+
+[P4]
+Fjerde kladde."""
+
+        # Simulate verifier that prematurely truncated after P2
+        truncated_verifier_response = """### AUDIT NOTES:
+- P1 and P2 checked.
+
+### NOVEL TERMS:
+None
+
+### VERIFIED TRANSLATION:
+[P1]
+Første verificeret.
+
+[P2]
+Anden verificeret."""
+
+        notes, verified = parse_verification_response(
+            truncated_verifier_response,
+            fallback_translation=draft,
+        )
+        parsed = parse_tagged_paragraphs(verified)
+        self.assertEqual(len(parsed), 4)
+        self.assertEqual(parsed[1], "Første verificeret.")
+        self.assertEqual(parsed[2], "Anden verificeret.")
+        # P3 and P4 must be backfilled from draft
+        self.assertEqual(parsed[3], "Tredje kladde.")
+        self.assertEqual(parsed[4], "Fjerde kladde.")
 
 
 if __name__ == "__main__":
