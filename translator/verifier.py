@@ -155,7 +155,8 @@ def _call_gemini_verifier(
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
 
     def _call():
         resp = client.models.generate_content(

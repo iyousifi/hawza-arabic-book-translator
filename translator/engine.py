@@ -141,7 +141,8 @@ def _translate_chunk_gemini(
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
     user_msg = _build_user_message(
         chunk=chunk,
         target_lang=cfg.target_lang,

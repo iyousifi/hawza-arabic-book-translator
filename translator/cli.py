@@ -21,6 +21,12 @@ from translator.slicing import (
     parse_page_range,
 )
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 if sys.platform == "win32":
     if hasattr(sys.stdout, "reconfigure") and sys.stdout:
         try:
