@@ -37,8 +37,14 @@ _TATWEEL_RE = re.compile(r"\u0640+")
 # Footnote line rules (e.g. ________ or --------)
 _FOOTNOTE_RULE_RE = re.compile(r"^[\s_—–-]{3,}\s*$")
 
-# Footnote markers, e.g. (1), (١), [1], [١], (*), at start or end of block
-_FOOTNOTE_MARKER_RE = re.compile(r"([(\[]\s*[\d٠-٩*†]+\s*[)\]]|\*|\b\d+[\-.)])")
+# Footnote markers, e.g. (1), (١), [1], [١], (*), 1., 1-, ١., ١-, 1», .1 at start or end of block
+_FOOTNOTE_MARKER_RE = re.compile(
+    r"([(\[]\s*[\d٠-٩*†]+\s*[)\]]"
+    r"|\*"
+    r"|(?<![\u0600-\u06FF])[\d٠-٩]+[\-.)]"
+    r"|(?<![\u0600-\u06FF])[\d٠-٩]+\s*»"
+    r"|[.،]\s*[\d٠-٩]+\b)"
+)
 
 # Pure page number pattern (Western or Eastern Arabic digits)
 _PAGE_NUM_RE = re.compile(r"^\s*[-–—]?\s*[\d٠-٩]+\s*[-–—]?\s*$")
@@ -259,26 +265,57 @@ class PageBlock:
     y0: float
     x1: float
     y1: float
+    font_size: float = 12.0
     is_footnote: bool = False
     is_header_or_footer: bool = False
     is_margin_rubric: bool = False
 
 
+def extract_footnote_divider_lines(page: Any) -> List[Tuple[float, float, float]]:
+    """Extract vector horizontal divider lines in the bottom 45% of the page.
+
+    Returns a list of tuples: (x0, x1, y)
+    """
+    lines: List[Tuple[float, float, float]] = []
+    if page is None or not hasattr(page, "get_drawings"):
+        return lines
+    try:
+        height = page.rect.height
+        for d in page.get_drawings():
+            for item in d.get("items", []):
+                if item[0] == "l":  # line
+                    p1, p2 = item[1], item[2]
+                    # Strictly horizontal line within 2.0pt tolerance
+                    if abs(p1.y - p2.y) < 2.0:
+                        y = (p1.y + p2.y) / 2.0
+                        # Must be in the lower 45% of the page
+                        if y > height * 0.55:
+                            x0 = min(p1.x, p2.x)
+                            x1 = max(p1.x, p2.x)
+                            # Must have significant width (> 35pt)
+                            if (x1 - x0) > 35.0:
+                                lines.append((x0, x1, y))
+    except Exception:
+        pass
+    return lines
+
+
 def classify_page_blocks(
-    blocks: List[Tuple[float, float, float, float, str, int, int]],
+    blocks: List[Any],
     page_width: float,
     page_height: float,
     remove_headers_footers: bool = True,
     separate_footnotes: bool = True,
     exclude_margin_rubrics: bool = True,
     return_rubrics: bool = False,
+    footnote_divider_lines: Optional[List[Tuple[float, float, float]]] = None,
 ) -> Tuple[List[str], List[str]] | Tuple[List[str], List[str], List[str]]:
     """Classify extracted PDF blocks into body text and footnotes.
 
     Parameters
     ----------
     blocks:
-        List of PyMuPDF text blocks (x0, y0, x1, y1, text, block_no, block_type).
+        List of PyMuPDF text blocks (x0, y0, x1, y1, text, block_no, block_type, [font_size]).
     page_width:
         Width of the page.
     page_height:
@@ -291,6 +328,8 @@ def classify_page_blocks(
         Whether to exclude vertical margin tabs and side ribbons (e.g. 'مدخل') from body text.
     return_rubrics:
         Whether to return the list of cleaned margin rubric titles as a third tuple element.
+    footnote_divider_lines:
+        Optional list of (x0, x1, y) horizontal line coordinates indicating column-aware footnote boundaries.
 
     Returns
     -------
@@ -298,6 +337,13 @@ def classify_page_blocks(
         (body_blocks, footnote_blocks) or (body_blocks, footnote_blocks, rubric_texts)
     """
     classified: List[PageBlock] = []
+
+    # Calculate typical body font size if font sizes are available in blocks
+    body_sizes = [
+        b[7] for b in blocks
+        if len(b) > 7 and (page_height * 0.15 < b[1] < page_height * 0.65) and b[7] > 0
+    ]
+    typical_body_size = (sum(body_sizes) / len(body_sizes)) if body_sizes else 0.0
 
     for b in blocks:
         # b[6] is block_type: 0 = text, 1 = image
@@ -313,6 +359,7 @@ def classify_page_blocks(
             continue
 
         x0, y0, x1, y1 = b[0], b[1], b[2], b[3]
+        font_size = b[7] if len(b) > 7 else 12.0
 
         block = PageBlock(
             text=norm_text,
@@ -320,6 +367,7 @@ def classify_page_blocks(
             y0=y0,
             x1=x1,
             y1=y1,
+            font_size=font_size,
         )
 
         # 1. Header detection: top 7.5% of page
@@ -335,8 +383,6 @@ def classify_page_blocks(
             continue  # omit separator rule line itself
 
         # 4. Vertical margin tab / rubric detection:
-        # Detect vertical decorative ribbons or margin rubrics in outer margins (x0 > 86% or x1 < 14%)
-        # with tall aspect ratio (height > 1.8 * width) or explicit margin rubric keywords.
         bw = x1 - x0
         bh = y1 - y0
         in_outer_margin = (x0 > page_width * 0.86) or (x1 < page_width * 0.14)
@@ -347,6 +393,14 @@ def classify_page_blocks(
 
         if exclude_margin_rubrics and in_outer_margin and (is_tall_vertical_ribbon or is_margin_rubric_keyword):
             block.is_margin_rubric = True
+
+        # 5. Column-aware footnote detection via vector divider lines:
+        if separate_footnotes and footnote_divider_lines:
+            for lx0, lx1, ly in footnote_divider_lines:
+                # Block is below the horizontal line in the same column/zone
+                if y0 >= ly - 4.0 and not (x1 < lx0 - 15.0 or x0 > lx1 + 15.0):
+                    block.is_footnote = True
+                    break
 
         classified.append(block)
 
@@ -361,8 +415,6 @@ def classify_page_blocks(
         classified.sort(key=lambda blk: (round(blk.y0 / 12.0), -blk.x0))
 
     # Footnote boundary detection:
-    # Footnotes in classical Hawza books appear at the bottom 35% of the page
-    # and typically begin with (١) or footnote markers.
     footnote_started = False
     body_blocks: List[str] = []
     footnote_blocks: List[str] = []
@@ -378,14 +430,23 @@ def classify_page_blocks(
         if blk.is_header_or_footer:
             continue
 
-        if separate_footnotes:
+        # If not already flagged by vector divider lines, test textual markers or font size (only when no vector lines exist)
+        if separate_footnotes and not blk.is_footnote and not footnote_divider_lines:
             in_bottom_zone = blk.y0 > page_height * 0.65
             has_marker = bool(
-                _FOOTNOTE_MARKER_RE.search(blk.text[:20])
-                or _FOOTNOTE_MARKER_RE.search(blk.text[-20:])
+                _FOOTNOTE_MARKER_RE.search(blk.text[:25])
+                or _FOOTNOTE_MARKER_RE.search(blk.text[-25:])
+            )
+            is_small_citation = bool(
+                typical_body_size > 13.0
+                and blk.font_size > 0
+                and blk.font_size < typical_body_size * 0.8
+                and any(kw in blk.text for kw in ("ص", "ج", "ح", "طبعة", "المصدر", "الكافي", "بحار", "وسائل"))
             )
 
-            if in_bottom_zone and (has_marker or footnote_started):
+            # In single-column pages, once a footnote starts in the bottom zone, succeeding bottom blocks follow.
+            # In multi-column pages, do NOT cascade footnote_started across columns.
+            if in_bottom_zone and (has_marker or is_small_citation or (not is_multi_column and footnote_started)):
                 footnote_started = True
                 blk.is_footnote = True
 
@@ -474,6 +535,7 @@ def _extract_blocks_with_styling(page: Any) -> List[Tuple[float, float, float, f
                 continue
             x0, y0, x1, y1 = b["bbox"]
             line_strings = []
+            font_sizes = []
             for l in b["lines"]:
                 spans = l.get("spans", [])
                 line_parts = []
@@ -481,6 +543,8 @@ def _extract_blocks_with_styling(page: Any) -> List[Tuple[float, float, float, f
                     t = s.get("text", "")
                     if not t:
                         continue
+                    if t.strip():
+                        font_sizes.append(s.get("size", 12.0))
                     t = fix_font_ligature_reversals(t)
                     color = s.get("color", 0)
                     if color == 0x24408f and len(t.strip()) > 1 and len(spans) > 1:
@@ -489,7 +553,8 @@ def _extract_blocks_with_styling(page: Any) -> List[Tuple[float, float, float, f
                         line_parts.append(t)
                 line_strings.append("".join(line_parts))
             block_text = "\n".join(line_strings)
-            blocks.append((x0, y0, x1, y1, block_text, idx, 0))
+            avg_font_size = sum(font_sizes) / len(font_sizes) if font_sizes else 12.0
+            blocks.append((x0, y0, x1, y1, block_text, idx, 0, avg_font_size))
         if blocks:
             return blocks
     except Exception:
@@ -543,6 +608,7 @@ def extract_text_from_pdf(
     for page_idx in range(start_idx, end_idx):
         page = doc[page_idx]
         blocks = _extract_blocks_with_styling(page)
+        divider_lines = extract_footnote_divider_lines(page)
         rect = page.rect
 
         body_blocks, footnote_blocks, rubric_texts = classify_page_blocks(
@@ -553,6 +619,7 @@ def extract_text_from_pdf(
             separate_footnotes=separate_footnotes,
             exclude_margin_rubrics=exclude_margin_rubrics,
             return_rubrics=True,
+            footnote_divider_lines=divider_lines,
         )
 
         page_parts: List[str] = []

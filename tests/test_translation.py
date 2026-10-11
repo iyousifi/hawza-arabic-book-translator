@@ -209,6 +209,52 @@ class TestSmartNormalizer(unittest.TestCase):
         self.assertEqual(len(footnotes), 1)
         self.assertIn("هذا تعريف القياس", footnotes[0])
 
+    def test_classify_page_blocks_with_vector_divider_lines(self):
+        from translator.normalizer import classify_page_blocks
+
+        # Simulate a 2-column page of height 1000, width 600
+        # Right column (x: 320..550), Left column (x: 50..280)
+        blocks = [
+            # Right column body
+            (320.0, 100.0, 550.0, 200.0, "الفقرة الأولى في العمود الأيمن من البحث.", 0, 0, 16.0),
+            (320.0, 220.0, 550.0, 350.0, "الفقرة الثانية في العمود الأيمن من البحث.", 1, 0, 16.0),
+            # Right column footnotes (underneath divider line y=700)
+            (320.0, 720.0, 550.0, 750.0, "كشف الغمة، ج2، ص255. 1", 2, 0, 10.0),
+            (320.0, 760.0, 550.0, 790.0, "الكافي، ج1، ص82. 2", 3, 0, 10.0),
+            # Left column body
+            (50.0, 100.0, 280.0, 200.0, "الفقرة الأولى في العمود الأيسر من البحث.", 4, 0, 16.0),
+            (50.0, 220.0, 280.0, 350.0, "الفقرة الثانية في العمود الأيسر من البحث.", 5, 0, 16.0),
+            # Left column footnote (underneath divider line y=800)
+            (50.0, 820.0, 280.0, 860.0, "المحاسن، ج2، ص166. 3", 6, 0, 10.0),
+        ]
+
+        divider_lines = [
+            (300.0, 550.0, 700.0),  # Right column divider line at y=700
+            (50.0, 290.0, 800.0),   # Left column divider line at y=800
+        ]
+
+        body, footnotes = classify_page_blocks(
+            blocks=blocks,
+            page_width=600.0,
+            page_height=1000.0,
+            remove_headers_footers=True,
+            separate_footnotes=True,
+            footnote_divider_lines=divider_lines,
+        )
+
+        # Body paragraphs: 2 from right column, 2 from left column, perfectly ordered
+        self.assertEqual(len(body), 4)
+        self.assertIn("العمود الأيمن", body[0])
+        self.assertIn("العمود الأيمن", body[1])
+        self.assertIn("العمود الأيسر", body[2])
+        self.assertIn("العمود الأيسر", body[3])
+
+        # Footnotes: 3 footnotes collected across columns
+        self.assertEqual(len(footnotes), 3)
+        self.assertIn("كشف الغمة", footnotes[0])
+        self.assertIn("الكافي", footnotes[1])
+        self.assertIn("المحاسن", footnotes[2])
+
     def test_extract_text_from_pdf_end_to_end(self):
         try:
             import pymupdf as fitz
