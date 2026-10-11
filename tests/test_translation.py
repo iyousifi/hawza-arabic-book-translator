@@ -720,6 +720,190 @@ class TestVerificationAuditReport(unittest.TestCase):
                 tmp_audit.unlink()
 
 
+    def test_checkpoint_save_load_and_validation(self):
+        import tempfile
+        from pathlib import Path
+        from translator.checkpoint import (
+            CheckpointData,
+            SavedChunk,
+            compute_source_hash,
+            is_checkpoint_compatible,
+            load_checkpoint,
+            remove_checkpoint,
+            save_checkpoint,
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".checkpoint.json", delete=False) as tmp:
+            tmp_cp = Path(tmp.name)
+
+        try:
+            hash_val = compute_source_hash(["chunk 1 text", "chunk 2 text"])
+            cp = CheckpointData(
+                version=1,
+                source_hash=hash_val,
+                total_chunks=2,
+                target_lang="da",
+                domain="fiqh",
+                inline_arabic=False,
+                verify=False,
+                chunks=[SavedChunk(index=0, chunk_output="Oversat afsnit 1", final_text="Oversat afsnit 1")],
+                session_terms={"صيغة": "formel"},
+            )
+            save_checkpoint(tmp_cp, cp)
+            self.assertTrue(tmp_cp.exists())
+
+            loaded = load_checkpoint(tmp_cp)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.total_chunks, 2)
+            self.assertEqual(len(loaded.chunks), 1)
+            self.assertEqual(loaded.chunks[0].chunk_output, "Oversat afsnit 1")
+            self.assertEqual(loaded.session_terms["صيغة"], "formel")
+
+            # Check compatibility
+            self.assertTrue(
+                is_checkpoint_compatible(
+                    loaded,
+                    source_hash=hash_val,
+                    total_chunks=2,
+                    target_lang="da",
+                    domain="fiqh",
+                    inline_arabic=False,
+                    verify=False,
+                )
+            )
+            # Incompatible if language differs
+            self.assertFalse(
+                is_checkpoint_compatible(
+                    loaded,
+                    source_hash=hash_val,
+                    total_chunks=2,
+                    target_lang="en",
+                    domain="fiqh",
+                    inline_arabic=False,
+                    verify=False,
+                )
+            )
+
+            # Cleanup
+            remove_checkpoint(tmp_cp)
+            self.assertFalse(tmp_cp.exists())
+        finally:
+            if tmp_cp.exists():
+                tmp_cp.unlink()
+
+    def test_translate_resumes_from_checkpoint(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from translator.config import ModelConfig
+        from translator.engine import translate
+        from translator.checkpoint import (
+            CheckpointData,
+            SavedChunk,
+            compute_source_hash,
+            save_checkpoint,
+        )
+        from translator.chunker import chunk_classical_arabic
+
+        text = "المسألة الأولى: في بيان النية.\n\nالمسألة الثانية: في بيان الشروط."
+        cfg = ModelConfig(target_lang="da", domain="fiqh", chunk_size=20, overlap_tokens=0)
+        chunks = chunk_classical_arabic(text, max_tokens=cfg.chunk_size, overlap_tokens=0)
+        self.assertGreaterEqual(len(chunks), 2)
+
+        with tempfile.NamedTemporaryFile(suffix=".checkpoint.json", delete=False) as tmp:
+            tmp_cp = Path(tmp.name)
+
+        try:
+            # Pre-seed checkpoint with chunk 0 already completed
+            src_hash = compute_source_hash([c.text for c in chunks])
+            cp = CheckpointData(
+                version=1,
+                source_hash=src_hash,
+                total_chunks=len(chunks),
+                target_lang=cfg.target_lang,
+                domain=cfg.domain,
+                inline_arabic=False,
+                verify=False,
+                chunks=[SavedChunk(index=0, chunk_output="Oversat spørgsmål 1", final_text="Oversat spørgsmål 1")],
+            )
+            save_checkpoint(tmp_cp, cp)
+
+            with patch("translator.engine._translate_chunk_gemini") as mock_gemini:
+                mock_gemini.return_value = "Oversat spørgsmål 2"
+
+                result = translate(
+                    text=text,
+                    cfg=cfg,
+                    checkpoint_path=tmp_cp,
+                    resume=True,
+                )
+
+                # Should only call API for remaining chunks (len(chunks) - 1)
+                self.assertEqual(mock_gemini.call_count, len(chunks) - 1)
+                self.assertIn("Oversat spørgsmål 1", result)
+                self.assertIn("Oversat spørgsmål 2", result)
+                # Checkpoint should be deleted after successful completion
+                self.assertFalse(tmp_cp.exists())
+
+        finally:
+            if tmp_cp.exists():
+                tmp_cp.unlink()
+
+    def test_translate_no_resume_ignores_checkpoint(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from translator.config import ModelConfig
+        from translator.engine import translate
+        from translator.checkpoint import (
+            CheckpointData,
+            SavedChunk,
+            compute_source_hash,
+            save_checkpoint,
+        )
+        from translator.chunker import chunk_classical_arabic
+
+        text = "المسألة الأولى: في بيان النية.\n\nالمسألة الثانية: في بيان الشروط."
+        cfg = ModelConfig(target_lang="da", domain="fiqh", chunk_size=20, overlap_tokens=0)
+        chunks = chunk_classical_arabic(text, max_tokens=cfg.chunk_size, overlap_tokens=0)
+        self.assertGreaterEqual(len(chunks), 2)
+
+        with tempfile.NamedTemporaryFile(suffix=".checkpoint.json", delete=False) as tmp:
+            tmp_cp = Path(tmp.name)
+
+        try:
+            src_hash = compute_source_hash([c.text for c in chunks])
+            cp = CheckpointData(
+                version=1,
+                source_hash=src_hash,
+                total_chunks=len(chunks),
+                target_lang=cfg.target_lang,
+                domain=cfg.domain,
+                inline_arabic=False,
+                verify=False,
+                chunks=[SavedChunk(index=0, chunk_output="Gammelt udkast", final_text="Gammelt udkast")],
+            )
+            save_checkpoint(tmp_cp, cp)
+
+            with patch("translator.engine._translate_chunk_gemini") as mock_gemini:
+                mock_gemini.return_value = "Frisk oversættelse"
+
+                result = translate(
+                    text=text,
+                    cfg=cfg,
+                    checkpoint_path=tmp_cp,
+                    resume=False,
+                )
+
+                # With resume=False, API should be called for ALL chunks
+                self.assertEqual(mock_gemini.call_count, len(chunks))
+                self.assertNotIn("Gammelt udkast", result)
+                self.assertIn("Frisk oversættelse", result)
+        finally:
+            if tmp_cp.exists():
+                tmp_cp.unlink()
+
+
 if __name__ == "__main__":
     unittest.main()
 

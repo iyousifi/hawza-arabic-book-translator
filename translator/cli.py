@@ -236,6 +236,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Retain intermediate .typ source file alongside the PDF",
     )
     parser.add_argument(
+        "--no-resume",
+        dest="resume",
+        action="store_false",
+        default=True,
+        help="Do not resume from existing checkpoint; start translation fresh from chunk 1",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="Custom path for checkpoint state file (defaults to <output>.checkpoint.json)",
+    )
+    parser.add_argument(
         "--list-glossaries",
         action="store_true",
         help="List all built-in languages and domain glossaries",
@@ -386,6 +398,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.verify:
         audit_path = args.audit_output or default_audit_path(output_path)
 
+    checkpoint_file = args.checkpoint or f"{output_path}.checkpoint.json"
+
     # --- Translate ---
     translated = translate(
         text=source_text,
@@ -394,6 +408,8 @@ def main(argv: list[str] | None = None) -> None:
         save_session_glossary=save_session_glossary_path,
         audit_report_path=audit_path,
         dry_run=args.dry_run,
+        checkpoint_path=checkpoint_file,
+        resume=args.resume,
     )
 
     write_output(translated, output_path)

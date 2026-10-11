@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import os
+from pathlib import Path
 import random
 import time
 from typing import Dict, List, Optional
@@ -34,6 +35,15 @@ from translator.config import (
 )
 from translator.glossary import format_glossary_for_prompt, load_glossary
 from translator.memory import TerminologyMemory
+from translator.checkpoint import (
+    CheckpointData,
+    SavedChunk,
+    compute_source_hash,
+    is_checkpoint_compatible,
+    load_checkpoint,
+    remove_checkpoint,
+    save_checkpoint,
+)
 
 import sys
 
@@ -327,6 +337,8 @@ def translate(
     save_session_glossary: Optional[str] = None,
     audit_report_path: Optional[str] = None,
     dry_run: bool = False,
+    checkpoint_path: Optional[Path | str] = None,
+    resume: bool = True,
 ) -> str:
     """Translate a classical Arabic text to the target language with discourse chunking and context chaining.
 
@@ -346,6 +358,10 @@ def translate(
         Optional file path to export a detailed verification audit report.
     dry_run:
         If True, skip API calls and return placeholder text.
+    checkpoint_path:
+        Optional file path to persist chunk checkpoints to survive network drops and process interruptions.
+    resume:
+        If True (default), automatically restore completed chunks from an existing checkpoint.
 
     Returns
     -------
@@ -465,9 +481,69 @@ def translate(
     else:
         translate_fn = _translate_chunk_gemini
 
-    # 6. Translate each chunk with sliding antecedent context and optional Pass 2 verification
+    # 6. Checkpoint resolution and resumption
     translated_chunks: List[str] = []
     audit_entries: List[AuditReportEntry] = []
+    checkpoint_data: Optional[CheckpointData] = None
+    start_index = 0
+
+    if checkpoint_path and not dry_run:
+        source_chunk_texts = [c.text for c in chunks]
+        src_hash = compute_source_hash(source_chunk_texts)
+
+        if not resume:
+            remove_checkpoint(checkpoint_path)
+        else:
+            loaded_cp = load_checkpoint(checkpoint_path)
+            if loaded_cp:
+                if is_checkpoint_compatible(
+                    loaded_cp,
+                    source_hash=src_hash,
+                    total_chunks=total,
+                    target_lang=cfg.target_lang,
+                    domain=cfg.domain,
+                    inline_arabic=cfg.inline_arabic,
+                    verify=cfg.verify,
+                ):
+                    checkpoint_data = loaded_cp
+                    translated_chunks = [c.chunk_output for c in checkpoint_data.chunks]
+                    start_index = len(translated_chunks)
+                    for c in checkpoint_data.chunks:
+                        if c.audit_entry:
+                            audit_entries.append(
+                                AuditReportEntry(
+                                    chunk_index=c.audit_entry["chunk_index"],
+                                    total_chunks=c.audit_entry["total_chunks"],
+                                    has_corrections=c.audit_entry["has_corrections"],
+                                    audit_notes=c.audit_entry["audit_notes"],
+                                    novel_terms=c.audit_entry.get("novel_terms", {}),
+                                )
+                            )
+                    if checkpoint_data.session_terms:
+                        session_memory.record_terms(checkpoint_data.session_terms, source_chunk=0)
+
+                    console.print(
+                        f"[bold green]🔄 Resumed from checkpoint:[/bold green] {start_index}/{total} chunk(s) "
+                        f"already completed. Continuing with chunk {start_index + 1}...\n"
+                    )
+                else:
+                    console.print(
+                        f"[dim yellow]⚠️ Existing checkpoint at {checkpoint_path} did not match current configuration; starting fresh.[/dim yellow]\n"
+                    )
+                    remove_checkpoint(checkpoint_path)
+
+        if checkpoint_data is None:
+            checkpoint_data = CheckpointData(
+                version=1,
+                source_hash=src_hash,
+                total_chunks=total,
+                target_lang=cfg.target_lang,
+                domain=cfg.domain,
+                inline_arabic=cfg.inline_arabic,
+                verify=cfg.verify,
+                chunks=[],
+                session_terms=session_memory.novel_terms(include_static=True),
+            )
 
     with Progress(
         SpinnerColumn(),
@@ -478,7 +554,13 @@ def translate(
         console=console,
     ) as progress:
         task = progress.add_task(f"Translating to {lang_name}…", total=total)
+        if start_index > 0:
+            progress.advance(task, advance=start_index)
+
         for i, chunk_item in enumerate(chunks):
+            if i < start_index:
+                continue
+
             # Trailing Arabic context from Chunk N-1
             prev_arabic = chunk_item.prev_arabic_context
 
@@ -575,9 +657,29 @@ def translate(
             translated_chunks.append(chunk_output)
             progress.advance(task)
 
+            # Persist progress to checkpoint
+            if checkpoint_path and not dry_run and checkpoint_data is not None:
+                audit_dict = None
+                if cfg.verify and audit_entries and audit_entries[-1].chunk_index == (i + 1):
+                    audit_dict = asdict(audit_entries[-1])
+                checkpoint_data.chunks.append(
+                    SavedChunk(
+                        index=i,
+                        chunk_output=chunk_output,
+                        final_text=final_text,
+                        audit_entry=audit_dict,
+                    )
+                )
+                checkpoint_data.session_terms = session_memory.novel_terms(include_static=True)
+                save_checkpoint(checkpoint_path, checkpoint_data)
+
             # Delay between chunks to respect rate limits
             if i < total - 1 and cfg.chunk_delay > 0:
                 time.sleep(cfg.chunk_delay)
+
+    # Clean up checkpoint on successful completion
+    if checkpoint_path and not dry_run:
+        remove_checkpoint(checkpoint_path)
 
     # Save session glossary if requested
     save_path = save_session_glossary or cfg.save_session_glossary
