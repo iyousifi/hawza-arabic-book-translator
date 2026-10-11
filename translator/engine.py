@@ -59,6 +59,26 @@ console = Console()
 MAX_RETRIES = 10
 INITIAL_BACKOFF = 4  # seconds
 
+TRANSIENT_ERROR_KEYWORDS = (
+    "rate", "limit", "429", "500", "502", "503", "504", "overloaded",
+    "resource_exhausted", "quota", "disconnected", "remote", "protocol",
+    "timeout", "timed out", "connection", "reset", "broken pipe", "network",
+    "unavailable", "internal", "service", "socket",
+)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """Determine whether an exception is a transient network or rate-limit error."""
+    err_str = str(exc).lower()
+    exc_type = type(exc).__name__.lower()
+    if any(kw in err_str or kw in exc_type for kw in TRANSIENT_ERROR_KEYWORDS):
+        return True
+    for cls in type(exc).__mro__:
+        name = cls.__name__.lower()
+        if any(term in name for term in ("transport", "timeout", "network", "connect", "protocol", "http")):
+            return True
+    return False
+
 
 def _retry_with_backoff(fn, retries: int = MAX_RETRIES):
     """Call *fn* with exponential back-off + jitter on transient errors."""
@@ -66,15 +86,12 @@ def _retry_with_backoff(fn, retries: int = MAX_RETRIES):
         try:
             return fn()
         except Exception as exc:
-            err_str = str(exc).lower()
-            if any(
-                kw in err_str
-                for kw in ("rate", "limit", "429", "500", "502", "503", "overloaded")
-            ):
+            if _is_transient_error(exc) and attempt < retries - 1:
                 wait = INITIAL_BACKOFF * (2 ** attempt) + random.uniform(0, 2)
+                err_summary = str(exc).strip().splitlines()[-1] if str(exc).strip() else type(exc).__name__
                 console.print(
-                    f"  [yellow]⏳ Rate-limited (attempt {attempt + 1}/{retries}), "
-                    f"retrying in {wait:.1f}s…[/yellow]"
+                    f"  [yellow]⏳ Transient network/API error ({err_summary[:60]}), "
+                    f"retrying (attempt {attempt + 1}/{retries}) in {wait:.1f}s…[/yellow]"
                 )
                 time.sleep(wait)
             else:
@@ -142,7 +159,6 @@ def _translate_chunk_gemini(
     from google.genai import types
 
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
     user_msg = _build_user_message(
         chunk=chunk,
         target_lang=cfg.target_lang,
@@ -152,6 +168,7 @@ def _translate_chunk_gemini(
     )
 
     def _call():
+        client = genai.Client(api_key=api_key)
         resp = client.models.generate_content(
             model=cfg.resolved_model(),
             contents=user_msg,
