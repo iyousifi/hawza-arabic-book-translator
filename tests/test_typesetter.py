@@ -92,5 +92,34 @@ Sokrates indførte dialogens metode, mens Aristoteles systematiserede den formel
             self.assertGreater(result_path.stat().st_size, 1000)
 
 
+    def test_compile_with_unclosed_labels_and_symbols(self):
+        sample_md = """# Lektion om Jurisprudens
+
+> 📜 **[الأصل العربي]**:
+> هو قول الهل تعاىل: <اĔقْرَ
+
+Allahs ord: «Læs!»
+
+[Fodnote:]* Indsigt i religionen er obligatorisk.
+
+Column 1: `ذلِكَ . وعَنْ زُرَارَةَ بْنِ أَعْيَنَ
+
+> 📜 **[الأصل العربي]**:
+> الَّȈذ ِıي عَلَّمَ øبِالْēق َلَمِ * عَلَّمَ الŅإ ِōنْسَاĩن َ
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = Path(tmpdir) / "test_unclosed_sanitized.pdf"
+            result_path = compile_markdown_to_pdf(
+                md_text=sample_md,
+                output_pdf_path=out_pdf,
+                title="Fiqh 3 Test",
+                lang="da",
+                domain="fiqh",
+                paper_size="b5",
+            )
+            self.assertTrue(result_path.exists())
+            self.assertGreater(result_path.stat().st_size, 1000)
+
+
 if __name__ == "__main__":
     unittest.main()

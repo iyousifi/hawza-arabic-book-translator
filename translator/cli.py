@@ -203,6 +203,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Compile translated markdown to a publication-ready academic PDF via Typst",
     )
     parser.add_argument(
+        "--pdf-only",
+        action="store_true",
+        help="Skip translation; compile an existing translated Markdown file directly into an academic PDF",
+    )
+    parser.add_argument(
         "--pdf-output",
         default=None,
         help="Path for the generated academic PDF (defaults to <output>.pdf)",
@@ -274,6 +279,43 @@ def main(argv: list[str] | None = None) -> None:
 
     if not args.input:
         parser.error("the following arguments are required: input")
+
+    # --- Direct PDF Typesetting Mode (Bypasses LLM Translation) ---
+    if args.pdf_only:
+        from translator.typesetter import compile_markdown_to_pdf, is_typst_available
+
+        if not is_typst_available():
+            console.print(
+                "[bold yellow]⚠️ Typst is not installed. Install it with 'pip install typst' to enable PDF generation.[/bold yellow]"
+            )
+            sys.exit(1)
+
+        md_path = Path(args.input)
+        if not md_path.exists():
+            console.print(f"[bold red]Error:[/bold red] Input file {md_path} not found.")
+            sys.exit(1)
+
+        md_text = md_path.read_text(encoding="utf-8")
+        pdf_path = args.pdf_output or md_path.with_suffix(".pdf")
+        book_title = args.book_title or md_path.stem.replace("_", " ").title()
+        book_subtitle = args.book_subtitle or f"Hawza Academic Series ({args.domain.upper()})"
+        console.print(f"[cyan]📖 Typesetting academic PDF ({args.paper_size.upper()}) via Typst...[/cyan]")
+        try:
+            compile_markdown_to_pdf(
+                md_text=md_text,
+                output_pdf_path=pdf_path,
+                title=book_title,
+                subtitle=book_subtitle,
+                lang=args.lang,
+                domain=args.domain,
+                paper_size=args.paper_size,
+                keep_typ_source=args.keep_typ,
+            )
+            console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")
+        except Exception as exc:
+            console.print(f"[bold red]PDF compilation error:[/bold red] {exc}")
+            sys.exit(1)
+        sys.exit(0)
 
     # --- Slicing configuration ---
     try:

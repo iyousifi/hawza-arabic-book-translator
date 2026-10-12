@@ -53,19 +53,38 @@ def markdown_to_typst_content(md_text: str) -> str:
     body = re.sub(r"(?<!\\)\$(?!\$)", r"\$", body)
     body = re.sub(r"(?<!\\)@([a-zA-Z])", r"\@\1", body)
 
-    # 3. Convert Footnote references: [^1] or [1] (when matched in definitions)
+    # Escape angle brackets < unless part of an HTML comment like <!-- rubric: ... -->
+    body = re.sub(r"<(?!!--)", r"\<", body)
+
+    # 3. Protect paired code backticks, then neutralize any lone/unpaired backticks
+    code_tokens = []
+
+    def code_repl(m: re.Match) -> str:
+        code_tokens.append(m.group(1))
+        return f"__CODE_TOKEN_{len(code_tokens)-1}__"
+
+    body = re.sub(r"`([^`\n]+)`", code_repl, body)
+    # Any remaining backtick is unpaired OCR/LLM noise; convert to apostrophe
+    body = body.replace("`", "'")
+
+    # Restore code tokens as Typst raw code
+    for i, token in enumerate(code_tokens):
+        body = body.replace(f"__CODE_TOKEN_{i}__", f"`{token}`")
+
+    # 4. Convert Footnote references: [^1] or [1] (when matched in definitions)
     for fn_id, fn_content in footnotes.items():
         # Escape any special characters in footnote content
         safe_fn_content = (
             fn_content.replace("$", r"\$")
             .replace("@", r"\@")
+            .replace("<", r"\<")
             .replace("[", "(")
             .replace("]", ")")
         )
         body = re.sub(rf"\[\^{fn_id}\]", f"#footnote[{safe_fn_content}]", body)
         body = re.sub(rf"\[{fn_id}\]", f"#footnote[{safe_fn_content}]", body)
 
-    # 4. Convert bold and italics
+    # 5. Convert bold and italics
     # Protect bold **text** -> placeholders
     bold_tokens = []
 
@@ -77,6 +96,9 @@ def markdown_to_typst_content(md_text: str) -> str:
 
     # Convert single *italic* -> _italic_
     body = re.sub(r"\*([^*\n]+?)\*", r"_\1_", body)
+
+    # Any remaining lone asterisk in the text is NOT paired markdown; escape it so Typst doesn't treat as bold
+    body = body.replace("*", r"\*")
 
     # Restore bold as Typst *bold*
     for i, token in enumerate(bold_tokens):
