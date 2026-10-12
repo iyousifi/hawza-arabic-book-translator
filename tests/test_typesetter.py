@@ -139,10 +139,16 @@ Column 1: `ذلِكَ . وعَنْ زُرَارَةَ بْنِ أَعْيَنَ
 
     def test_strip_harakat_in_typesetting(self):
         md = "> 📜 **[الأصل العربي]**:\n> اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ\n\nLæs i din Herres navn."
-        converted_no_vowels = markdown_to_typst_content(md, strip_harakat=True, keep_shaddah=False)
-        self.assertIn("اقرأ باسم ربك الذي خلق", converted_no_vowels)
-        self.assertNotIn("اقْرَأْ", converted_no_vowels)
+        # Default behavior: strip_harakat is True
+        converted_default = markdown_to_typst_content(md)
+        self.assertIn("اقرأ باسم ربك الذي خلق", converted_default)
+        self.assertNotIn("اقْرَأْ", converted_default)
 
+        # Explicit strip_harakat=False (preserve vowels)
+        converted_with_vowels = markdown_to_typst_content(md, strip_harakat=False)
+        self.assertIn("اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ", converted_with_vowels)
+
+        # keep_shaddah=True
         converted_keep_shaddah = markdown_to_typst_content(md, strip_harakat=True, keep_shaddah=True)
         self.assertIn("اقرأ باسم ربّك الّذي خلق", converted_keep_shaddah)
 
@@ -151,11 +157,34 @@ Column 1: `ذلِكَ . وعَنْ زُرَارَةَ بْنِ أَعْيَنَ
             res = compile_markdown_to_pdf(
                 md_text=md,
                 output_pdf_path=out_pdf,
-                strip_harakat=True,
                 arabic_font="amiri",
             )
             self.assertTrue(res.exists())
             self.assertGreater(res.stat().st_size, 1000)
+
+    def test_cli_vowels_flags(self):
+        from translator.cli import _build_parser
+        parser = _build_parser()
+
+        # default: strip_harakat is True (no vowels)
+        args_default = parser.parse_args(["dummy.pdf"])
+        self.assertTrue(args_default.strip_harakat)
+
+        # --no-vowels explicitly
+        args_no_vowels = parser.parse_args(["dummy.pdf", "--no-vowels"])
+        self.assertTrue(args_no_vowels.strip_harakat)
+
+        # --strip-harakat alias
+        args_strip = parser.parse_args(["dummy.pdf", "--strip-harakat"])
+        self.assertTrue(args_strip.strip_harakat)
+
+        # --vowels (preserve vowels)
+        args_vowels = parser.parse_args(["dummy.pdf", "--vowels"])
+        self.assertFalse(args_vowels.strip_harakat)
+
+        # --keep-vowels alias
+        args_keep = parser.parse_args(["dummy.pdf", "--keep-vowels"])
+        self.assertFalse(args_keep.strip_harakat)
 
 
 if __name__ == "__main__":

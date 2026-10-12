@@ -460,6 +460,8 @@ def translate(
                     c.text,
                     f"[DRY RUN - {lang_name.upper()} ({cfg.domain}){verify_tag}] Translated chunk {i + 1}/{total} "
                     f"({c.token_count} tokens)",
+                    strip_harakat=cfg.strip_harakat,
+                    keep_shaddah=cfg.keep_shaddah,
                 )
                 for i, c in enumerate(chunks)
             ]
@@ -650,7 +652,12 @@ def translate(
             if cfg.inline_arabic:
                 from translator.bilingual import format_bilingual_markdown
 
-                chunk_output = format_bilingual_markdown(chunk_item.text, final_text)
+                chunk_output = format_bilingual_markdown(
+                    chunk_item.text,
+                    final_text,
+                    strip_harakat=cfg.strip_harakat,
+                    keep_shaddah=cfg.keep_shaddah,
+                )
             else:
                 chunk_output = final_text
 

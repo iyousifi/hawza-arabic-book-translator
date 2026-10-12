@@ -84,6 +84,16 @@ class TestBilingual(unittest.TestCase):
         self.assertIn("> المقدمة في علم المنطق.", formatted)
         self.assertIn("Indledning til logikkens videnskab.", formatted)
 
+        # Vocalized text: default strips vowels
+        vocalized_ar = "اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ"
+        formatted_default = format_bilingual_markdown(vocalized_ar, "Læs!")
+        self.assertIn("> اقرأ باسم ربك الذي خلق", formatted_default)
+        self.assertNotIn("اقْرَأْ", formatted_default)
+
+        # With strip_harakat=False, vowels are preserved
+        formatted_vowels = format_bilingual_markdown(vocalized_ar, "Læs!", strip_harakat=False)
+        self.assertIn("> اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ", formatted_vowels)
+
     def test_split_into_paragraphs_with_rubric(self):
         text = "<!-- rubric: مدخل -->\n\nFørste afsnit.\n\nAndet afsnit."
         paras = split_into_paragraphs(text)

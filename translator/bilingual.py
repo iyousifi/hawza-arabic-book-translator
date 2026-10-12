@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Tuple
 
+from translator.normalizer import strip_arabic_vowels
+
 _STRICT_TAG_RE = re.compile(
     r"(?:^|\n)\s*(?:[#*_\-]+\s*)?"          # optional leading markdown (###, **, -)
     r"(?:\[\s*P?\s*(\d+)\s*\]"             # [P1] or [1] or [P 1]
@@ -172,6 +174,8 @@ def pair_bilingual_paragraphs(
 def format_bilingual_markdown(
     arabic_text: str,
     translation_text: str,
+    strip_harakat: bool = True,
+    keep_shaddah: bool = False,
 ) -> str:
     """Render paired bilingual paragraphs into alternating Markdown format.
 
@@ -181,6 +185,9 @@ def format_bilingual_markdown(
 
     {translation}
     """
+    if strip_harakat and arabic_text:
+        arabic_text = strip_arabic_vowels(arabic_text, keep_shaddah=keep_shaddah)
+
     pairs = pair_bilingual_paragraphs(arabic_text, translation_text)
     blocks: List[str] = []
 

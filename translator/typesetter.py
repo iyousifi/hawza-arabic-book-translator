@@ -40,7 +40,7 @@ def normalize_paper_size(size: str) -> str:
 
 def markdown_to_typst_content(
     md_text: str,
-    strip_harakat: bool = False,
+    strip_harakat: bool = True,
     keep_shaddah: bool = False,
 ) -> str:
     """Convert academic markdown body text into clean Typst markup."""
@@ -418,7 +418,7 @@ def compile_markdown_to_pdf(
     domain: str = "mantiq",
     paper_size: str = "iso-b5",
     arabic_font: str = "amiri",
-    strip_harakat: bool = False,
+    strip_harakat: bool = True,
     keep_shaddah: bool = False,
     keep_typ_source: bool = False,
 ) -> Path:

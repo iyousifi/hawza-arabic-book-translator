@@ -251,7 +251,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--strip-harakat",
         dest="strip_harakat",
         action="store_true",
-        help="Remove Arabic vowel annotations (fatha, kasra, damma, tanwin, sukun) from Arabic text in PDF",
+        default=True,
+        help="Remove Arabic vowel annotations (fatha, kasra, damma, tanwin, sukun) from Arabic text (default: enabled)",
+    )
+    parser.add_argument(
+        "--vowels",
+        "--keep-vowels",
+        dest="strip_harakat",
+        action="store_false",
+        help="Preserve Arabic vowel annotations (fatha, kasra, damma, tanwin, sukun) in Arabic text",
     )
     parser.add_argument(
         "--keep-shaddah",
@@ -445,6 +453,8 @@ def main(argv: list[str] | None = None) -> None:
         session_glossary=args.session_glossary,
         save_session_glossary=save_session_glossary_path,
         inline_arabic=args.inline_arabic,
+        strip_harakat=args.strip_harakat,
+        keep_shaddah=args.keep_shaddah,
     )
 
     # --- Determine Output Paths ---

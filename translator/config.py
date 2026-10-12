@@ -264,6 +264,8 @@ class ModelConfig:
     book_subtitle: Optional[str] = None          # custom subtitle for title page
     keep_typ_source: bool = False                # retain intermediate .typ source file
     inline_arabic: bool = False                  # include original Arabic text inline above each translated paragraph (bilingual mode)
+    strip_harakat: bool = True                   # remove short Arabic vowel annotations (fatha, kasra, damma, tanwin, sukun)
+    keep_shaddah: bool = False                   # retain shaddah consonant gemination mark when stripping vowels
 
     # provider-specific defaults
     GEMINI_DEFAULT_MODEL: str = field(default="gemini-3.8-flash", repr=False)
