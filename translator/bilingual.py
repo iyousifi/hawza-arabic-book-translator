@@ -196,12 +196,12 @@ def format_bilingual_markdown(
         if not clean_tr:
             ar_lines = clean_ar.split("\n")
             ar_quoted = "\n".join(f"> {line}" for line in ar_lines)
-            blocks.append(f"> 📜 **[الأصل العربي]**:\n{ar_quoted}")
+            blocks.append(ar_quoted)
             continue
 
         ar_lines = clean_ar.split("\n")
         ar_quoted = "\n".join(f"> {line}" for line in ar_lines)
-        block = f"> 📜 **[الأصل العربي]**:\n{ar_quoted}\n\n{clean_tr}"
+        block = f"{ar_quoted}\n\n{clean_tr}"
         blocks.append(block)
 
     return "\n\n".join(blocks)

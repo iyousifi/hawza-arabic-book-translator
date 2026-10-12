@@ -80,7 +80,7 @@ class TestBilingual(unittest.TestCase):
         ar = "المقدمة في علم المنطق."
         tr = "Indledning til logikkens videnskab."
         formatted = format_bilingual_markdown(ar, tr)
-        self.assertIn("> 📜 **[الأصل العربي]**:", formatted)
+        self.assertNotIn("📜", formatted)
         self.assertIn("> المقدمة في علم المنطق.", formatted)
         self.assertIn("Indledning til logikkens videnskab.", formatted)
 
