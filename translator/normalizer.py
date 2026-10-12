@@ -26,6 +26,29 @@ _HARAKAT_RE = re.compile(
     r"[\u0617-\u061A\u064B-\u0652\u0656-\u065F\u0670]"
 )
 
+# Vowel annotations excluding shaddah (\u0651)
+_VOWELS_ONLY_RE = re.compile(
+    r"[\u0617-\u061A\u064B-\u0650\u0652\u0656-\u065F\u0670]"
+)
+
+
+def strip_arabic_vowels(text: str, keep_shaddah: bool = False) -> str:
+    """Remove Arabic vowel annotations (fatha, kasra, damma, sukun, tanwin).
+
+    Parameters
+    ----------
+    text:
+        Arabic text containing diacritics.
+    keep_shaddah:
+        If True, preserves the shaddah consonant gemination mark (\u0651).
+        If False (default), removes all diacritical marks.
+    """
+    if not text:
+        return ""
+    if keep_shaddah:
+        return _VOWELS_ONLY_RE.sub("", text)
+    return _HARAKAT_RE.sub("", text)
+
 # Invisible directional controls and zero-width artifacts
 _BIDI_CONTROLS_RE = re.compile(
     r"[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF\u200B\u200C\u200D]"

@@ -216,6 +216,22 @@ class TestSmartNormalizer(unittest.TestCase):
         self.assertIn("أدلتها", cleaned)
         self.assertIn("أهمية", cleaned)
 
+    def test_strip_arabic_vowels(self):
+        from translator.normalizer import strip_arabic_vowels
+
+        vocalized = "اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ"
+        # Bare (no vowels, no shaddah)
+        bare = strip_arabic_vowels(vocalized, keep_shaddah=False)
+        self.assertEqual(bare, "اقرأ باسم ربك الذي خلق")
+
+        # Keep shaddah
+        with_shaddah = strip_arabic_vowels(vocalized, keep_shaddah=True)
+        self.assertEqual(with_shaddah, "اقرأ باسم ربّك الّذي خلق")
+
+        # Empty string and None handling
+        self.assertEqual(strip_arabic_vowels(""), "")
+        self.assertEqual(strip_arabic_vowels(None), "")
+
     def test_classify_page_blocks(self):
         from translator.normalizer import classify_page_blocks
 

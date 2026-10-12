@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from translator.normalizer import strip_arabic_vowels
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -36,8 +38,15 @@ def normalize_paper_size(size: str) -> str:
     return "iso-b5"
 
 
-def markdown_to_typst_content(md_text: str) -> str:
+def markdown_to_typst_content(
+    md_text: str,
+    strip_harakat: bool = False,
+    keep_shaddah: bool = False,
+) -> str:
     """Convert academic markdown body text into clean Typst markup."""
+    if strip_harakat:
+        md_text = strip_arabic_vowels(md_text, keep_shaddah=keep_shaddah)
+
     # 1. Parse and extract footnotes: [^1]: Note text or [1]: Note text
     footnotes: Dict[str, str] = {}
     footnote_def_re = re.compile(r"^\[\^?(\d+)\]:\s*(.+)$", re.MULTILINE)
@@ -139,13 +148,23 @@ def markdown_to_typst_content(md_text: str) -> str:
         if blockquote_lines:
             content = " ".join(blockquote_lines).strip()
             content = extract_and_emit_rubric(content)
-            is_arabic_source = "📜" in content or "الأصل العربي" in content or bool(re.search(r"[\u0600-\u06FF]{6,}", content))
+            ar_count = len(re.findall(r"[\u0600-\u06FF]", content))
+            lat_count = len(re.findall(r"[A-Za-z\u00C0-\u024F]", content))
+            is_arabic_source = (
+                "📜" in content
+                or "الأصل العربي" in content
+                or (ar_count >= 3 and ar_count > lat_count)
+            )
             if is_arabic_source:
                 flush_bilingual()
                 clean_ar = re.sub(r"^[📜\s*]*\[?الأصل العربي\]?[:\s*]*", "", content).strip()
+                if strip_harakat:
+                    clean_ar = strip_arabic_vowels(clean_ar, keep_shaddah=keep_shaddah)
                 pending_arabic = clean_ar
             else:
                 flush_bilingual()
+                if strip_harakat and ar_count > 0:
+                    content = strip_arabic_vowels(content, keep_shaddah=keep_shaddah)
                 is_sacred = any(
                     kw in content.lower()
                     for kw in ["qur'an", "koran", "hadith", "riwayah", "profeten", "imam", "«", "»", "allah"]
@@ -399,6 +418,8 @@ def compile_markdown_to_pdf(
     domain: str = "mantiq",
     paper_size: str = "iso-b5",
     arabic_font: str = "amiri",
+    strip_harakat: bool = False,
+    keep_shaddah: bool = False,
     keep_typ_source: bool = False,
 ) -> Path:
     """Compile Markdown translation into a styled academic Hawza PDF using Typst.
@@ -421,6 +442,10 @@ def compile_markdown_to_pdf(
         Target paper format ("b5", "a4", "a5", "letter").
     arabic_font:
         Arabic font priority: "amiri" (classical scholastic Naskh) or "dubai" (modern Monotype Naskh).
+    strip_harakat:
+        If True, strips Arabic vowel annotations (fatha, kasra, damma, tanwin, sukun).
+    keep_shaddah:
+        If True (when strip_harakat is enabled), preserves the shaddah consonant mark.
     keep_typ_source:
         If True, saves the intermediate .typ file alongside the PDF.
 
@@ -439,7 +464,11 @@ def compile_markdown_to_pdf(
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
 
     # 1. Convert markdown to Typst body
-    typst_body = markdown_to_typst_content(md_text)
+    typst_body = markdown_to_typst_content(
+        md_text,
+        strip_harakat=strip_harakat,
+        keep_shaddah=keep_shaddah,
+    )
 
     # 2. Wrap in academic Hawza template
     typst_doc = build_typst_document(

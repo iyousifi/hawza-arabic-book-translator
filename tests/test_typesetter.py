@@ -137,6 +137,26 @@ Column 1: `ذلِكَ . وعَنْ زُرَارَةَ بْنِ أَعْيَنَ
             )
             self.assertTrue(res.exists())
 
+    def test_strip_harakat_in_typesetting(self):
+        md = "> 📜 **[الأصل العربي]**:\n> اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ\n\nLæs i din Herres navn."
+        converted_no_vowels = markdown_to_typst_content(md, strip_harakat=True, keep_shaddah=False)
+        self.assertIn("اقرأ باسم ربك الذي خلق", converted_no_vowels)
+        self.assertNotIn("اقْرَأْ", converted_no_vowels)
+
+        converted_keep_shaddah = markdown_to_typst_content(md, strip_harakat=True, keep_shaddah=True)
+        self.assertIn("اقرأ باسم ربّك الّذي خلق", converted_keep_shaddah)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = Path(tmpdir) / "test_unvocalized.pdf"
+            res = compile_markdown_to_pdf(
+                md_text=md,
+                output_pdf_path=out_pdf,
+                strip_harakat=True,
+                arabic_font="amiri",
+            )
+            self.assertTrue(res.exists())
+            self.assertGreater(res.stat().st_size, 1000)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -247,6 +247,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Retain intermediate .typ source file alongside the PDF",
     )
     parser.add_argument(
+        "--no-vowels",
+        "--strip-harakat",
+        dest="strip_harakat",
+        action="store_true",
+        help="Remove Arabic vowel annotations (fatha, kasra, damma, tanwin, sukun) from Arabic text in PDF",
+    )
+    parser.add_argument(
+        "--keep-shaddah",
+        action="store_true",
+        help="Retain the shaddah consonant gemination mark when stripping vowels",
+    )
+    parser.add_argument(
         "--no-resume",
         dest="resume",
         action="store_false",
@@ -316,6 +328,8 @@ def main(argv: list[str] | None = None) -> None:
                 domain=args.domain,
                 paper_size=args.paper_size,
                 arabic_font=args.arabic_font,
+                strip_harakat=args.strip_harakat,
+                keep_shaddah=args.keep_shaddah,
                 keep_typ_source=args.keep_typ,
             )
             console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")
@@ -488,6 +502,8 @@ def main(argv: list[str] | None = None) -> None:
                     domain=args.domain,
                     paper_size=args.paper_size,
                     arabic_font=args.arabic_font,
+                    strip_harakat=args.strip_harakat,
+                    keep_shaddah=args.keep_shaddah,
                     keep_typ_source=args.keep_typ,
                 )
                 console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")
