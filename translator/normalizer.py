@@ -49,6 +49,16 @@ _FOOTNOTE_MARKER_RE = re.compile(
 # Pure page number pattern (Western or Eastern Arabic digits)
 _PAGE_NUM_RE = re.compile(r"^\s*[-–—]?\s*[\d٠-٩]+\s*[-–—]?\s*$")
 
+# Legacy 1990s Quranic/Calligraphic font artifacts (e.g. wmNaskhQurani93, MacNaskh)
+# These fonts mapped decorative connector swashes and ligatures into Latin Extended codepoints.
+_UNCONDITIONAL_QURANI_ARTIFACTS = "ĀăąćĊċđĒēĔĕĖĚĩĪĭĮıĳŅŊŋŌōřŚƑƔƕƗƜƝƸƺƻǌǍǕǢȈȝȤ͜͝͞▪\ufffd"
+_QURANI_FONT_ARTIFACTS_RE = re.compile(f"[{re.escape(_UNCONDITIONAL_QURANI_ARTIFACTS)}]")
+
+_CONDITIONAL_LATIN_ARTIFACTS = "ø÷äöüþúùûóõÿ"
+_CONDITIONAL_LATIN_ARTIFACTS_RE = re.compile(
+    rf"[{re.escape(_CONDITIONAL_LATIN_ARTIFACTS)}](?=[\u0600-\u06FF])|(?<=[\u0600-\u06FF])[{re.escape(_CONDITIONAL_LATIN_ARTIFACTS)}]"
+)
+
 
 # ---------------------------------------------------------------------------
 # Reversal (Bidi / Visual RTL) Detection & Repair
@@ -170,6 +180,92 @@ def fix_font_ligature_reversals(text: str) -> str:
         text,
     )
 
+    # 7. Legacy Calligraphic / Quranic font artifacts (wmNaskhQurani93) & intra-word spacing:
+    text = _QURANI_FONT_ARTIFACTS_RE.sub("", text)
+    text = _CONDITIONAL_LATIN_ARTIFACTS_RE.sub("", text)
+    text = re.sub(r"(?<=[\u0600-\u06FF\s])(?:nj|lj)(?=[\u0600-\u06FF\s])", "", text)
+    # Reconnect Arabic diacritics separated by space from their base letters
+    text = re.sub(r"(?<=[\u0600-\u06FF])\s+([\u064B-\u065F\u0670])", r"\1", text)
+
+    # Reconstitute fragmented Quranic verses commonly typeset with wmNaskhQurani93:
+    text = re.sub(r"خ\s*َلَ\s*ق\s*َ", "خَلَقَ", text)
+    text = re.sub(r"ال\s*إ\s*ِ\s*نْسَا\s*ن\s*َ", "الإِنْسَانَ", text)
+    text = re.sub(r"ال\s*إ\s*ِ\s*نْسا\s*ن\s*ُ", "الإِنْسَانُ", text)
+    text = re.sub(r"مِ\s*ن\s*ْ", "مِنْ", text)
+    text = re.sub(r"عَلَ\s*ق\s*ٍ", "عَلَقٍ", text)
+    text = re.sub(r"ا\s*قْرَ\s*أْ?", "اقْرَأْ", text)
+    text = re.sub(r"رَ\s*ب(?:[\u0651\u064F]{2}|[\u0651\u064F])?كَ", "رَبُّكَ", text)
+    text = re.sub(r"رَ\s*ب(?:[\u0651\u0650]{2}|[\u0651\u0650])?كَ", "رَبِّكَ", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])[ْـ]\s*(?=بِاسْمِ)", "", text)
+    text = re.sub(r"ال\s*أَكْرَمُ", "الأَكْرَمُ", text)
+    text = re.sub(r"الَّ\s*ذ\s*ِ\s*ي", "الَّذِي", text)
+    text = re.sub(r"الَّ\s*ذ\s*ِي\s*ن\s*َ", "الَّذِينَ", text)
+    text = re.sub(r"بِالْ\s*ق\s*َلَمِ", "بِالْقَلَمِ", text)
+    text = re.sub(r"ي\s*َعْلَمْ", "يَعْلَمْ", text)
+    text = re.sub(r"ي\s*َ\s*خْ\s*ش\s*َى", "يَخْشَى", text)
+    text = re.sub(r"عِ\s*ب\s*ادِهِ", "عِبَادِهِ", text)
+    text = re.sub(r"إ\s*ِ\s*نَّما", "إِنَّمَا", text)
+    text = re.sub(r"يَا\s+أَ\s*يُّهَا", "يَا أَيُّهَا", text)
+    text = re.sub(r"آمَ\s*ن\s*ُوا", "آمَنُوا", text)
+    text = re.sub(r"ا\s*تَّ\s*ق\s*ُوا", "اتَّقُوا", text)
+    text = re.sub(r"كُو\s*نُوا", "كُونُوا", text)
+    text = re.sub(r"الصَّادِ\s*قِ\s*ي\s*ن\s*َ", "الصَّادِقِينَ", text)
+    text = re.sub(r"لِ\s*ي\s*َ\s*ت\s*َ\s*ف\s*َ\s*ق\s*َّهُوا", "لِيَتَفَقَّهُوا", text)
+    text = re.sub(r"فِ\s*ي\s+الدِّ\s*ي\s*ن\s*ِ", "فِي الدِّينِ", text)
+    text = re.sub(r"وَلِ\s*يُ\s*ن\s*ْ\s*ذ\s*ِرُوا", "وَلِيُنْذِرُوا", text)
+    text = re.sub(r"قَوْمَهُمْ", "قَوْمَهُمْ", text)
+    text = re.sub(r"إ\s*ِ\s*ذ\s*َا", "إِذَا", text)
+    text = re.sub(r"رَ\s*ج\s*َعُوا", "رَجَعُوا", text)
+    text = re.sub(r"إ\s*ِلَ\s*يْهِمْ", "إِلَيْهِمْ", text)
+    text = re.sub(r"ي\s*َحْ\s*ذ\s*َرُو\s*ن\s*َ?", "يَحْذَرُونَ", text)
+    text = re.sub(r"فَلْ\s*يَ\s*ن\s*ْ\s*ظ\s*ُرِ", "فَلْيَنْظُرِ", text)
+    text = re.sub(r"طَعامِهِ", "طَعَامِهِ", text)
+    text = re.sub(r"يَسْ\s*ت\s*َمِعُو\s*ن\s*َ", "يَسْتَمِعُونَ", text)
+    text = re.sub(r"الْ\s*ق\s*َوْلَ", "الْقَوْلَ", text)
+    text = re.sub(r"فَ\s*يَ\s*تَّ\s*بِعُو\s*ن\s*َ", "فَيَتَّبِعُونَ", text)
+    text = re.sub(r"أَحْسَ\s*نَهُ", "أَحْسَنَهُ", text)
+
+    # 8. Swissra font ligature fixes and broken decomposed Lam-Alef words:
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)ال(?:ك| )فايئ\b", r"\1الكفائي", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)ال(?:ع| )يي\b", r"\1العيني", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)(?:اإلس|الإس)\s+اام\b", r"\1الإسلام", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)(?:املعام|المعام)\s+اات\b", r"\1المعاملات", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)(?:االبت|الابت)\s+ااء\b", r"\1الابتلاء", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)الكر\s+مي\b", r"\1الكريم", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)خب\s+ااف\b", r"\1خلاف", text)
+    text = re.sub(r"\bف\s+اا\b", "فلا", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)ال\s+اازِمُ?\b", r"\1اللازم", text)
+    text = re.sub(r"\bرَجُ\s+اانِ\b", "رجلان", text)
+    text = re.sub(r"\bجَاهِ\s+ااً\b", "جاهلاً", text)
+    text = re.sub(r"\bجَهْ\s+ااً\b", "جهلاً", text)
+    text = re.sub(r"\bوَجِ\s+ااً\b", "وجلاً", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)الإخ\s+ااص\b", r"\1الإخلاص", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلكب]?)المكال\b", r"\1الكمال", text)
+    text = re.sub(r"\bمب(ستوى|ختلف|قدار|ا|عنى|وجب|قتضى)\b", r"بم\1", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفل]?)ميكن(ه?)\b", r"\1يمكن\2", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفل]?)ميوت\b", r"\1يموت", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)حتقيق\b", r"\1تحقيق", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)حتصيل\b", r"\1تحصيل", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)إال(?![\u0600-\u06FF])", r"\1إلا", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف]?)هبا(?![\u0600-\u06FF])", r"\1بها", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف]?)هلا(?![\u0600-\u06FF])", r"\1لها", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف]?)هنم(?![\u0600-\u06FF])", r"\1منهم", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف]?)عهنم(?![\u0600-\u06FF])", r"\1عنهم", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وف]?)مهنا(?![\u0600-\u06FF])", r"\1منها", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)أدلهتا\b", r"\1أدلتها", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)أمهية\b", r"\1أهمية", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)صحّهتا\b", r"\1صحتها", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)الشهات\b", r"\1الشبهات", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)الإشكاالت\b", r"\1الإشكالات", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)اصطالحات\b", r"\1اصطلاحات", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)حديهثم\b", r"\1حديثهم", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)(?:الُْؤْمِنِنَ|المؤمنن)\b", r"\1المؤمنين", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)الُْسَنِْ\b", r"\1الحسن", text)
+    text = re.sub(r"(?<![\u0600-\u06FF])([وفلبك]?)عَيِِّ\b", r"\1علي", text)
+    text = re.sub(r"\bمعىً\b", "معنىً", text)
+    text = re.sub(r"\bالقلي هلل\b", "القلبي لله", text)
+    text = re.sub(r"\bمل\s+(يكن|يتمكّن|يدرك|يسبق|يقصد|يراع|يمكن|تكن)", r"لم \1", text)
+
     return text
 
 
@@ -196,6 +292,10 @@ def normalize_arabic_text(
     """
     if not text:
         return ""
+
+    # Step 0: Strip legacy calligraphic/Quranic font artifacts before decomposition
+    text = _QURANI_FONT_ARTIFACTS_RE.sub("", text)
+    text = _CONDITIONAL_LATIN_ARTIFACTS_RE.sub("", text)
 
     # Step 1: Decompose presentation forms (e.g. ﻼ \uFEFB, ﷲ \uFDF2) into standard Arabic
     decomposed = unicodedata.normalize("NFKD", text)
@@ -631,11 +731,11 @@ def extract_text_from_pdf(
                 page_parts.append(f"<!-- rubric: {r} -->")
 
         if body_blocks:
-            page_parts.append("\n\n".join(body_blocks))
+            page_parts.append(fix_font_ligature_reversals("\n\n".join(body_blocks)))
 
         if footnote_blocks:
             footnotes_section = (
-                "[الهوامش والتعليقات / Page Footnotes]:\n" + "\n".join(footnote_blocks)
+                "[الهوامش والتعليقات / Page Footnotes]:\n" + fix_font_ligature_reversals("\n".join(footnote_blocks))
             )
             page_parts.append(footnotes_section)
 

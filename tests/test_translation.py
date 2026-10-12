@@ -179,6 +179,43 @@ class TestSmartNormalizer(unittest.TestCase):
         legit = "كيف يمكن تعريف وتصنيف هذا المبحث؟"
         self.assertEqual(fix_font_ligature_reversals(legit), legit)
 
+    def test_qurani_font_artifact_stripping(self):
+        from translator.normalizer import fix_font_ligature_reversals
+
+        # 1993 wmNaskhQurani font artifacts mixed into Quranic text (Surah Al-Alaq 96:1-3)
+        raw_ayah = "ْ øبِاسْمِ رَøبِّكَ الَّȈذ ِıي Ȥخ َلَĖق َ * ͜ Ȥخ َلَĖق َ الŅإ ِōنْسَاĩن َ مِĪن ْ عَلَĖق ٍ ͝ اĔقْرَأْ وَرَøبُّكَ الŅأَكْرَمُ"
+        cleaned = fix_font_ligature_reversals(raw_ayah)
+
+        # Non-Arabic glyphs should be completely stripped
+        for bad_char in "øȈıȤĖ͜ŅōĩĪ͝Ĕ":
+            self.assertNotIn(bad_char, cleaned)
+
+        # Verses should be cleanly reconstituted
+        self.assertIn("بِاسْمِ رَبِّكَ الَّذِي خَلَقَ", cleaned)
+        self.assertIn("خَلَقَ الإِنْسَانَ مِنْ عَلَقٍ", cleaned)
+        self.assertIn("اقْرَأْ وَرَبُّكَ الأَكْرَمُ", cleaned)
+
+    def test_swissra_font_ligature_repairs(self):
+        from translator.normalizer import fix_font_ligature_reversals
+
+        raw_text = (
+            "الواجب الكفايئ والواجب العيي في اإلس اام ومجال املعام اات عند االبت ااء هبا، "
+            "والقرآن الكر مي ميكن حتقيق البصيرة به بإال شبهة، وروايات أهل البيت عهنم يؤخذ الدين ومن أدلهتا وأمهية ذلك."
+        )
+        cleaned = fix_font_ligature_reversals(raw_text)
+
+        self.assertIn("الواجب الكفائي", cleaned)
+        self.assertIn("والواجب العيني", cleaned)
+        self.assertIn("الإسلام", cleaned)
+        self.assertIn("المعاملات", cleaned)
+        self.assertIn("الابتلاء", cleaned)
+        self.assertIn("الكريم", cleaned)
+        self.assertIn("يمكن تحقيق", cleaned)
+        self.assertIn("بإلا", cleaned)
+        self.assertIn("عنهم", cleaned)
+        self.assertIn("أدلتها", cleaned)
+        self.assertIn("أهمية", cleaned)
+
     def test_classify_page_blocks(self):
         from translator.normalizer import classify_page_blocks
 
