@@ -231,11 +231,17 @@ def build_typst_document(
     lang: str = "da",
     domain: str = "mantiq",
     paper_size: str = "iso-b5",
+    arabic_font: str = "amiri",
 ) -> str:
     """Wrap converted Typst body content in an academic Hawza book template."""
     normalized_paper = normalize_paper_size(paper_size)
     clean_title = title.replace('"', '\\"')
     clean_subtitle = subtitle.replace('"', '\\"')
+
+    if arabic_font.lower() == "dubai":
+        ar_font_chain = '("Dubai", "Amiri", "Traditional Arabic", "Scheherazade New", "Segoe UI")'
+    else:
+        ar_font_chain = '("Amiri", "Dubai", "Traditional Arabic", "Scheherazade New", "Segoe UI")'
 
     domain_labels = {
         "mantiq": "al-Manṭiq al-Islāmī (Logik)",
@@ -348,7 +354,7 @@ def build_typst_document(
   radius: (left: 4pt),
   spacing: 0.9em,
 )[
-  #set text(font: ("Amiri", "Traditional Arabic", "Scheherazade New", "Segoe UI"), size: 11pt, dir: rtl, lang: "ar")
+  #set text(font: {ar_font_chain}, size: 12.5pt, dir: rtl, lang: "ar")
   #set par(justify: true, leading: 0.85em, first-line-indent: 0pt)
   #content
 ]
@@ -392,6 +398,7 @@ def compile_markdown_to_pdf(
     lang: str = "da",
     domain: str = "mantiq",
     paper_size: str = "iso-b5",
+    arabic_font: str = "amiri",
     keep_typ_source: bool = False,
 ) -> Path:
     """Compile Markdown translation into a styled academic Hawza PDF using Typst.
@@ -412,6 +419,8 @@ def compile_markdown_to_pdf(
         Hawza academic domain (e.g. "mantiq", "fiqh").
     paper_size:
         Target paper format ("b5", "a4", "a5", "letter").
+    arabic_font:
+        Arabic font priority: "amiri" (classical scholastic Naskh) or "dubai" (modern Monotype Naskh).
     keep_typ_source:
         If True, saves the intermediate .typ file alongside the PDF.
 
@@ -440,28 +449,41 @@ def compile_markdown_to_pdf(
         lang=lang,
         domain=domain,
         paper_size=paper_size,
+        arabic_font=arabic_font,
     )
 
     # 3. Write intermediate .typ file
     out_typ = out_pdf.with_suffix(".typ")
     out_typ.write_text(typst_doc, encoding="utf-8")
 
-    # 4. Compile via Typst
+    # 4. Compile via Typst with bundled fonts (e.g. Amiri)
+    fonts_dir = Path(__file__).parent / "fonts"
+    compile_kwargs = {"font_paths": [fonts_dir]} if fonts_dir.exists() else {}
+
     final_output_pdf = out_pdf
     try:
         try:
-            typst.compile(str(out_typ), output=str(out_pdf))
+            typst.compile(str(out_typ), output=str(out_pdf), **compile_kwargs)
             logger.info("Successfully compiled academic PDF: %s", out_pdf)
         except OSError as e:
             if "os error 32" in str(e) or "being used by another process" in str(e):
-                fallback_pdf = out_pdf.with_name(f"{out_pdf.stem}_updated{out_pdf.suffix}")
-                logger.warning(
-                    "Destination PDF %s is locked by another process. Compiling to fallback: %s",
-                    out_pdf,
-                    fallback_pdf,
-                )
-                typst.compile(str(out_typ), output=str(fallback_pdf))
-                final_output_pdf = fallback_pdf
+                compiled = False
+                for attempt in range(1, 10):
+                    tag = "_updated" if attempt == 1 else f"_updated_{attempt}"
+                    fallback_pdf = out_pdf.with_name(f"{out_pdf.stem}{tag}{out_pdf.suffix}")
+                    try:
+                        logger.warning(
+                            "Destination PDF is locked by another process. Compiling to fallback: %s",
+                            fallback_pdf,
+                        )
+                        typst.compile(str(out_typ), output=str(fallback_pdf), **compile_kwargs)
+                        final_output_pdf = fallback_pdf
+                        compiled = True
+                        break
+                    except OSError:
+                        continue
+                if not compiled:
+                    raise
             else:
                 raise
     finally:

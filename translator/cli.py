@@ -236,6 +236,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Render original Arabic paragraphs inline above each translated paragraph (bilingual edition)",
     )
     parser.add_argument(
+        "--arabic-font",
+        choices=["amiri", "dubai"],
+        default="amiri",
+        help="Arabic typeface for PDF typesetting: 'amiri' (classical scholastic Bulaq Naskh, default) or 'dubai' (modern Monotype Naskh)",
+    )
+    parser.add_argument(
         "--keep-typ",
         action="store_true",
         help="Retain intermediate .typ source file alongside the PDF",
@@ -309,6 +315,7 @@ def main(argv: list[str] | None = None) -> None:
                 lang=args.lang,
                 domain=args.domain,
                 paper_size=args.paper_size,
+                arabic_font=args.arabic_font,
                 keep_typ_source=args.keep_typ,
             )
             console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")
@@ -480,6 +487,7 @@ def main(argv: list[str] | None = None) -> None:
                     lang=args.lang,
                     domain=args.domain,
                     paper_size=args.paper_size,
+                    arabic_font=args.arabic_font,
                     keep_typ_source=args.keep_typ,
                 )
                 console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")

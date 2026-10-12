@@ -120,6 +120,23 @@ Column 1: `ذلِكَ . وعَنْ زُرَارَةَ بْنِ أَعْيَنَ
             self.assertTrue(result_path.exists())
             self.assertGreater(result_path.stat().st_size, 1000)
 
+    def test_arabic_font_selection(self):
+        doc_amiri = build_typst_document("body", arabic_font="amiri")
+        self.assertIn('"Amiri", "Dubai"', doc_amiri)
+
+        doc_dubai = build_typst_document("body", arabic_font="dubai")
+        self.assertIn('"Dubai", "Amiri"', doc_dubai)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = Path(tmpdir) / "test_amiri.pdf"
+            sample_md = "> اقْرَأْ بِاسْمِ رَبِّكَ الَّذِي خَلَقَ\n\nLæs i din Herres navn."
+            res = compile_markdown_to_pdf(
+                md_text=sample_md,
+                output_pdf_path=out_pdf,
+                arabic_font="amiri",
+            )
+            self.assertTrue(res.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
