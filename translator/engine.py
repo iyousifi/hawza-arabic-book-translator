@@ -339,6 +339,8 @@ def translate(
     dry_run: bool = False,
     checkpoint_path: Optional[Path | str] = None,
     resume: bool = True,
+    initial_prev_arabic: Optional[str] = None,
+    initial_prev_target: Optional[str] = None,
 ) -> str:
     """Translate a classical Arabic text to the target language with discourse chunking and context chaining.
 
@@ -409,6 +411,7 @@ def translate(
         text,
         max_tokens=cfg.chunk_size,
         overlap_tokens=cfg.overlap_tokens,
+        initial_prev_arabic=initial_prev_arabic or "",
     )
     total = len(chunks)
 
@@ -568,7 +571,11 @@ def translate(
 
             # Trailing translated context from Chunk N-1
             prev_target = None
-            if translated_chunks and cfg.overlap_tokens > 0:
+            if i == 0 and initial_prev_target and cfg.overlap_tokens > 0:
+                prev_target = get_trailing_context(
+                    initial_prev_target, max_tokens=cfg.overlap_tokens
+                )
+            elif translated_chunks and cfg.overlap_tokens > 0:
                 prev_target = get_trailing_context(
                     translated_chunks[-1], max_tokens=cfg.overlap_tokens
                 )

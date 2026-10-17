@@ -59,6 +59,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to the input file (.txt, .pdf, or .docx)",
     )
     parser.add_argument(
+        "--project",
+        default=None,
+        help="Path to an existing translation project manifest JSON to continue translating",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         default=None,
@@ -291,9 +296,120 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_project_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="arabic-translator project",
+        description="Hawza Translation Project Management: incremental book translation with unified master documents.",
+    )
+    subparsers = parser.add_subparsers(dest="action", required=True)
+
+    # Subcommand: init
+    p_init = subparsers.add_parser("init", help="Initialize a new book translation project")
+    p_init.add_argument("source", help="Path to input Arabic book (e.g. Fiqh3.pdf)")
+    p_init.add_argument("-p", "--project-file", default=None, help="Custom path for project JSON manifest")
+    p_init.add_argument("--adopt", default=None, help="Existing translated Markdown file to adopt into this project")
+    p_init.add_argument("--pages", default=None, help="Page range for adopted file (e.g. 11-23)")
+    p_init.add_argument("--adopt-glossary", default=None, help="Existing session glossary JSON to adopt")
+    p_init.add_argument("-l", "--lang", default="da", help="Target language code (default: da)")
+    p_init.add_argument("-d", "--domain", default="mantiq", help="Hawza domain (default: mantiq)")
+    p_init.add_argument("--provider", default="gemini", choices=["gemini", "openai", "anthropic"])
+    p_init.add_argument("--model", default=None, help="Model override")
+    p_init.add_argument("--verify", action="store_true", help="Enable two-pass verification")
+    p_init.add_argument("--inline-arabic", "--bilingual", dest="inline_arabic", action="store_true", default=True)
+    p_init.add_argument("--no-vowels", "--strip-harakat", dest="strip_harakat", action="store_true", default=True)
+    p_init.add_argument("--vowels", "--keep-vowels", dest="strip_harakat", action="store_false")
+    p_init.add_argument("--keep-shaddah", action="store_true")
+    p_init.add_argument("--arabic-font", choices=["amiri", "dubai"], default="amiri")
+    p_init.add_argument("--paper-size", choices=["b5", "a4", "a5", "letter"], default="b5")
+    p_init.add_argument("--title", default=None, help="Book title")
+    p_init.add_argument("--subtitle", default=None, help="Book subtitle")
+    p_init.add_argument("--pdf", action="store_true", default=True, help="Compile master PDF via Typst (default: True)")
+    p_init.add_argument("--no-pdf", dest="pdf", action="store_false", help="Skip compiling master PDF")
+
+    # Subcommand: run / continue
+    p_run = subparsers.add_parser("run", aliases=["continue"], help="Translate the next slice of a project")
+    p_run.add_argument("project_file", help="Path to project JSON file (e.g. Fiqh3.project.json)")
+    p_run.add_argument("--pages", default=None, help="Specific page range (e.g. 24-35)")
+    p_run.add_argument("--take-pages", type=int, default=None, help="Number of pages to translate from next page")
+    p_run.add_argument("--dry-run", action="store_true", help="Dry run without API calls")
+    p_run.add_argument("--no-pdf", dest="pdf", action="store_false", default=True, help="Skip recompiling master PDF")
+
+    # Subcommand: status
+    p_status = subparsers.add_parser("status", help="Show project progress dashboard")
+    p_status.add_argument("project_file", help="Path to project JSON file (e.g. Fiqh3.project.json)")
+
+    return parser
+
+
+def _handle_project_cli(args_list: List[str]) -> None:
+    from translator.project import continue_project, init_project, print_project_status
+
+    proj_parser = _build_project_parser()
+    args = proj_parser.parse_args(args_list)
+
+    if args.action == "init":
+        p_file = args.project_file or Path(args.source).with_name(f"{Path(args.source).stem}.project.json")
+        init_project(
+            project_file=p_file,
+            source_file=args.source,
+            domain=args.domain,
+            target_lang=args.lang,
+            provider=args.provider,
+            model=args.model,
+            verify=args.verify,
+            inline_arabic=args.inline_arabic,
+            strip_harakat=args.strip_harakat,
+            keep_shaddah=args.keep_shaddah,
+            arabic_font=args.arabic_font,
+            paper_size=args.paper_size,
+            book_title=args.title,
+            book_subtitle=args.subtitle,
+            adopt_md=args.adopt,
+            adopt_pages=args.pages,
+            adopt_glossary=args.adopt_glossary,
+            compile_pdf=args.pdf,
+        )
+        console.print(f"[bold green]✨ Project initialized successfully:[/bold green] {p_file}")
+        print_project_status(p_file)
+
+    elif args.action in ("run", "continue"):
+        continue_project(
+            project_file=args.project_file,
+            pages_str=args.pages,
+            take_pages=args.take_pages,
+            dry_run=args.dry_run,
+            compile_pdf=args.pdf,
+        )
+        print_project_status(args.project_file)
+
+    elif args.action == "status":
+        print_project_status(args.project_file)
+
+
 def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    # Dedicated project subcommands: py -m translator project <init|run|status> ...
+    if argv and argv[0] == "project":
+        _handle_project_cli(argv[1:])
+        return
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.project:
+        from translator.project import continue_project, print_project_status
+
+        continue_project(
+            project_file=args.project,
+            pages_str=args.pages,
+            take_pages=args.take_pages,
+            dry_run=args.dry_run,
+            compile_pdf=args.pdf if hasattr(args, "pdf") else True,
+        )
+        print_project_status(args.project)
+        return
 
     if args.list_glossaries:
         glossaries = list_available_glossaries()
@@ -303,8 +419,8 @@ def main(argv: list[str] | None = None) -> None:
             console.print(f"  • [bold]{full_name}[/bold] (`{lang_code}`): {', '.join(domains)}")
         sys.exit(0)
 
-    if not args.input:
-        parser.error("the following arguments are required: input")
+    if not args.input and not args.project:
+        parser.error("the following arguments are required: input (or --project)")
 
     # --- Direct PDF Typesetting Mode (Bypasses LLM Translation) ---
     if args.pdf_only:

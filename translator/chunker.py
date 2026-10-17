@@ -172,6 +172,7 @@ def chunk_classical_arabic(
     text: str,
     max_tokens: int = 1500,
     overlap_tokens: int = 200,
+    initial_prev_arabic: str = "",
 ) -> List[TextChunk]:
     """Chunk classical Arabic text using scholastic discourse hierarchy with antecedent overlap.
 
@@ -183,6 +184,8 @@ def chunk_classical_arabic(
         Target maximum token budget per chunk.
     overlap_tokens:
         Tokens of preceding Arabic text to capture as antecedent context for each chunk.
+    initial_prev_arabic:
+        Optional trailing Arabic text from a preceding session/slice to seed the first chunk's antecedent context.
 
     Returns
     -------
@@ -218,7 +221,9 @@ def chunk_classical_arabic(
     result: List[TextChunk] = []
     for i, c_text in enumerate(chunks_text):
         prev_context = ""
-        if i > 0 and overlap_tokens > 0:
+        if i == 0 and initial_prev_arabic and overlap_tokens > 0:
+            prev_context = get_trailing_context(initial_prev_arabic, max_tokens=overlap_tokens)
+        elif i > 0 and overlap_tokens > 0:
             prev_context = get_trailing_context(chunks_text[i - 1], max_tokens=overlap_tokens)
 
         result.append(
