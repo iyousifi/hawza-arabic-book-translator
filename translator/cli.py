@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> None:
         book_subtitle = args.book_subtitle or f"Hawza Academic Series ({args.domain.upper()})"
         console.print(f"[cyan]📖 Typesetting academic PDF ({args.paper_size.upper()}) via Typst...[/cyan]")
         try:
-            compile_markdown_to_pdf(
+            written_pdf = compile_markdown_to_pdf(
                 md_text=md_text,
                 output_pdf_path=pdf_path,
                 title=book_title,
@@ -340,7 +340,7 @@ def main(argv: list[str] | None = None) -> None:
                 keep_shaddah=args.keep_shaddah,
                 keep_typ_source=args.keep_typ,
             )
-            console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")
+            console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {written_pdf}")
         except Exception as exc:
             console.print(f"[bold red]PDF compilation error:[/bold red] {exc}")
             sys.exit(1)
@@ -503,7 +503,7 @@ def main(argv: list[str] | None = None) -> None:
             book_subtitle = args.book_subtitle or f"Hawza Academic Series ({args.domain.upper()})"
             console.print(f"[cyan]📖 Typesetting academic PDF ({args.paper_size.upper()}) via Typst...[/cyan]")
             try:
-                compile_markdown_to_pdf(
+                written_pdf = compile_markdown_to_pdf(
                     md_text=translated,
                     output_pdf_path=pdf_path,
                     title=book_title,
@@ -516,7 +516,7 @@ def main(argv: list[str] | None = None) -> None:
                     keep_shaddah=args.keep_shaddah,
                     keep_typ_source=args.keep_typ,
                 )
-                console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {pdf_path}")
+                console.print(f"[bold green]📚 Academic PDF written to:[/bold green] {written_pdf}")
             except Exception as exc:
                 console.print(f"[bold red]PDF compilation error:[/bold red] {exc}")
 
