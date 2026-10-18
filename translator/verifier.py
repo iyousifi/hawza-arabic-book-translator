@@ -144,7 +144,7 @@ def parse_verification_response(
             ]
             if missing:
                 console.print(
-                    f"  [dim yellow]⚠️ Verifier response missed/truncated {len(missing)} tag(s) "
+                    f"  [dim yellow][!] Verifier response missed/truncated {len(missing)} tag(s) "
                     f"({missing[:5]}{'...' if len(missing) > 5 else ''}); backfilled from Pass 1 draft.[/dim yellow]"
                 )
                 for idx in missing:

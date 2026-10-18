@@ -228,6 +228,36 @@ Anden verificeret."""
         self.assertEqual(parsed[3], "Tredje kladde.")
         self.assertEqual(parsed[4], "Fjerde kladde.")
 
+    def test_consolidate_bilingual_markdown(self):
+        from translator.bilingual import consolidate_bilingual_markdown
+
+        fragmented_md = """# Kapitel 1
+
+> الفقرة الأولى القصيرة جدا.
+
+Dette er første korte del.
+
+> والفقرة الثانية المكملة لها.
+
+.
+
+> والفقرة الثالثة التي تختم الجملة.
+
+og her afsluttes den samlede tanke.
+
+> الدرس الثاني: مباحث الألفاظ
+
+Første lektion titel.
+"""
+        consolidated = consolidate_bilingual_markdown(fragmented_md, min_chars=100)
+        # The three fragmented paragraphs should be consolidated into one paragraph
+        self.assertIn("> الفقرة الأولى القصيرة جدا. والفقرة الثانية المكملة لها. والفقرة الثالثة التي تختم الجملة.", consolidated)
+        # The single period '.' translation must be stripped out and translations merged cleanly
+        self.assertNotIn("\n\n.\n\n", consolidated)
+        self.assertIn("Dette er første korte del. og her afsluttes den samlede tanke.", consolidated)
+        # The section heading must remain its own block
+        self.assertIn("> الدرس الثاني: مباحث الألفاظ", consolidated)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -208,6 +208,18 @@ class TestProjectManagement(unittest.TestCase):
             state = ProjectState.load(proj_file)
             self.assertEqual(state.next_page, 3)
 
+            # 4. Project run with --all and --vowels
+            main([
+                "project",
+                "run",
+                str(proj_file),
+                "--all",
+                "--vowels",
+                "--dry-run",
+            ])
+            state = ProjectState.load(proj_file)
+            self.assertFalse(state.strip_harakat)
+
 
 if __name__ == "__main__":
     unittest.main()

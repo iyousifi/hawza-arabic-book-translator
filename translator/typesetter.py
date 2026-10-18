@@ -44,6 +44,10 @@ def markdown_to_typst_content(
     keep_shaddah: bool = False,
 ) -> str:
     """Convert academic markdown body text into clean Typst markup."""
+    from translator.bilingual import consolidate_bilingual_markdown
+
+    md_text = consolidate_bilingual_markdown(md_text, min_chars=250)
+
     if strip_harakat:
         md_text = strip_arabic_vowels(md_text, keep_shaddah=keep_shaddah)
 
@@ -81,17 +85,34 @@ def markdown_to_typst_content(
         body = body.replace(f"__CODE_TOKEN_{i}__", f"`{token}`")
 
     # 4. Convert Footnote references: [^1] or [1] (when matched in definitions)
-    for fn_id, fn_content in footnotes.items():
-        # Escape any special characters in footnote content
-        safe_fn_content = (
-            fn_content.replace("$", r"\$")
-            .replace("@", r"\@")
-            .replace("<", r"\<")
-            .replace("[", "(")
-            .replace("]", ")")
-        )
-        body = re.sub(rf"\[\^{fn_id}\]", f"#footnote[{safe_fn_content}]", body)
-        body = re.sub(rf"\[{fn_id}\]", f"#footnote[{safe_fn_content}]", body)
+    footnote_tokens = []
+    def fn_repl(m: re.Match) -> str:
+        fn_id = m.group(1)
+        if fn_id in footnotes:
+            fn_content = footnotes[fn_id]
+            # Format bold and italics inside footnote content
+            bolds = []
+            def b_fn_repl(match: re.Match) -> str:
+                bolds.append(match.group(1))
+                return f"__FNB_{len(bolds)-1}__"
+            fn_styled = re.sub(r"\*\*(.+?)\*\*", b_fn_repl, fn_content)
+            fn_styled = re.sub(r"\*([^*\n]+?)\*", r"_\1_", fn_styled)
+            fn_styled = fn_styled.replace("*", r"\*")
+            for idx, tok in enumerate(bolds):
+                fn_styled = fn_styled.replace(f"__FNB_{idx}__", f"*{tok}*")
+
+            safe_fn_content = (
+                fn_styled.replace("$", r"\$")
+                .replace("@", r"\@")
+                .replace("<", r"\<")
+                .replace("[", r"\[")
+                .replace("]", r"\]")
+            )
+            footnote_tokens.append(f"#footnote[{safe_fn_content}]")
+            return f"__FN_TOKEN_{len(footnote_tokens)-1}__"
+        return m.group(0)
+
+    body = re.sub(r"\[\^?(\d+)\]", fn_repl, body)
 
     # 5. Convert bold and italics
     # Protect bold **text** -> placeholders
@@ -113,21 +134,29 @@ def markdown_to_typst_content(
     for i, token in enumerate(bold_tokens):
         body = body.replace(f"__BOLD_TOKEN_{i}__", f"*{token}*")
 
-    # 5. Line-by-line processing: Headings, blockquotes, lists, dividers
+    # 6. Escape remaining square brackets in general text so they don't break Typst block delimiters
+    body = body.replace("[", r"\[").replace("]", r"\]")
+
+    # Restore footnote tokens
+    for i, token in enumerate(footnote_tokens):
+        body = body.replace(f"__FN_TOKEN_{i}__", token)
+
+    # 7. Line-by-line processing: Headings, blockquotes, lists, dividers
     lines = []
     in_blockquote = False
     blockquote_lines = []
     pending_arabic = None
     pending_tr_lines = []
 
-    rubric_tag_re = re.compile(r"<!--\s*rubric:\s*(.*?)\s*-->|\[RUBRIC:\s*(.*?)\]", re.IGNORECASE)
+    rubric_tag_re = re.compile(r"<!--\s*rubric:\s*(.*?)\s*-->|\\?\[RUBRIC:\s*(.*?)\\?\]", re.IGNORECASE)
 
     def extract_and_emit_rubric(text: str) -> str:
         match = rubric_tag_re.search(text)
         if match:
             r_val = (match.group(1) or match.group(2) or "").strip()
             if r_val:
-                lines.append(f"\n#margin_tab[{r_val}]\n")
+                clean_r_val = r_val.replace(r"\[", "[").replace(r"\]", "]")
+                lines.append(f"\n#margin_tab[{clean_r_val}]\n")
             return rubric_tag_re.sub("", text).strip()
         return text
 
@@ -206,10 +235,11 @@ def markdown_to_typst_content(
                 flush_bilingual()
             else:
                 # Accumulate translation line
-                if trimmed.startswith("- "):
-                    pending_tr_lines.append(f"- {trimmed[2:].strip()}")
+                safe_tr = re.sub(r"^=+(\s+)", r"\\=\1", trimmed)
+                if safe_tr.startswith("- "):
+                    pending_tr_lines.append(f"- {safe_tr[2:].strip()}")
                 else:
-                    pending_tr_lines.append(trimmed)
+                    pending_tr_lines.append(safe_tr)
                 continue
 
         # Horizontal rules
@@ -236,7 +266,8 @@ def markdown_to_typst_content(
             # Bullet list
             lines.append(f"- {trimmed[2:].strip()}")
         else:
-            lines.append(line)
+            safe_line = re.sub(r"^=+(\s+)", r"\\=\1", line)
+            lines.append(safe_line)
 
     flush_blockquote()
     flush_bilingual()

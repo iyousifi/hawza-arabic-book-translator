@@ -211,4 +211,133 @@ def format_bilingual_markdown(
         block = f"{ar_quoted}\n\n{clean_tr}"
         blocks.append(block)
 
-    return "\n\n".join(blocks)
+    raw_md = "\n\n".join(blocks)
+    return consolidate_bilingual_markdown(raw_md, min_chars=250)
+
+
+_SECTION_TITLE_RE = re.compile(
+    r"^(?:الدرس|المبحث|المطلب|المقصد|الباب|الفصل|المرحلة|المسألة|أولاً|ثانياً|ثالثاً|رابعاً|خامساً)\s*(?:الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر|الحادي|الثاني|الثالث|\d+)?",
+    re.IGNORECASE,
+)
+_FOOTNOTE_HEADER_RE = re.compile(r"\[الهوامش والتعليقات\s*/\s*Page Footnotes\]", re.IGNORECASE)
+
+
+def consolidate_bilingual_markdown(md_text: str, min_chars: int = 250) -> str:
+    """Consolidate fragmented bilingual markdown blocks into cohesive paragraphs of at least 3-4 lines.
+
+    Merges contiguous small Arabic blocks and their matching translations until each paragraph
+    reaches at least min_chars (~250-450 characters / 3-5 lines).
+    Eliminates dummy translation placeholders (e.g. '.', '•', '[P', lone brackets) and
+    prevents disjointed one-line blocks in the final document and typeset PDF.
+    """
+    if not md_text:
+        return ""
+
+    raw_blocks = md_text.split("\n\n")
+    parsed_items: List[Tuple[str, str, str]] = []
+    i = 0
+
+    def is_boundary(ar_text: str) -> bool:
+        clean = ar_text.strip()
+        if clean.startswith("#"):
+            return True
+        if _FOOTNOTE_HEADER_RE.search(clean):
+            return True
+        if len(clean) < 60 and bool(_SECTION_TITLE_RE.match(clean)):
+            return True
+        return False
+
+    while i < len(raw_blocks):
+        b = raw_blocks[i].strip()
+        if not b:
+            i += 1
+            continue
+        if b.startswith("<!-- slice:"):
+            parsed_items.append(("slice", b, ""))
+            i += 1
+        elif b.startswith("#"):
+            parsed_items.append(("heading", b, ""))
+            i += 1
+        elif _FOOTNOTE_HEADER_RE.search(b):
+            parsed_items.append(("footnote_header", b, ""))
+            i += 1
+        elif b.startswith("[^") and "]:" in b:
+            parsed_items.append(("footnote_def", b, ""))
+            i += 1
+        elif b.startswith(">"):
+            ar_text = "\n".join(l.lstrip("> ").strip() for l in b.splitlines()).strip()
+            tr_text = ""
+            if i + 1 < len(raw_blocks):
+                next_b = raw_blocks[i + 1].strip()
+                if not next_b.startswith(">") and not next_b.startswith("#") and not next_b.startswith("<!--") and not (next_b.startswith("[^") and "]:" in next_b):
+                    tr_text = next_b
+                    i += 1
+            parsed_items.append(("bilingual", ar_text, tr_text))
+            i += 1
+        else:
+            parsed_items.append(("text", b, ""))
+            i += 1
+
+    merged_items: List[Tuple[str, str, str]] = []
+    acc_ar: List[str] = []
+    acc_tr: List[str] = []
+
+    def flush_acc():
+        nonlocal acc_ar, acc_tr
+        if not acc_ar:
+            return
+        combined_ar = " ".join(acc_ar).strip()
+        clean_tr_parts = []
+        for t in acc_tr:
+            t_clean = t.strip()
+            if t_clean in (".", "•", "-", "..", "...", "[P", "[", "]"):
+                continue
+            if t_clean:
+                clean_tr_parts.append(t_clean)
+        combined_tr = " ".join(clean_tr_parts).strip()
+        merged_items.append(("bilingual", combined_ar, combined_tr))
+        acc_ar = []
+        acc_tr = []
+
+    for item_type, ar, tr in parsed_items:
+        if item_type != "bilingual":
+            flush_acc()
+            merged_items.append((item_type, ar, tr))
+            continue
+
+        if is_boundary(ar):
+            flush_acc()
+            merged_items.append(("bilingual", ar, tr))
+            continue
+
+        if ar in ("•", "-") and tr in ("•", "-", ""):
+            continue
+
+        acc_ar.append(ar)
+        if tr and tr not in (".", "•", "-", "..", "...", "[P", "[", "]"):
+            acc_tr.append(tr)
+
+        curr_ar_len = sum(len(x) for x in acc_ar)
+        last_ar = acc_ar[-1].strip()
+        ends_sentence = bool(re.search(r"[.!:؟]\s*$", last_ar))
+        has_substantive_tr = bool(acc_tr)
+
+        if curr_ar_len >= min_chars and ends_sentence and has_substantive_tr:
+            flush_acc()
+        elif curr_ar_len >= int(min_chars * 1.9) and has_substantive_tr:
+            flush_acc()
+
+    flush_acc()
+
+    out_blocks: List[str] = []
+    for item_type, ar, tr in merged_items:
+        if item_type in ("slice", "heading", "footnote_header", "footnote_def", "text"):
+            out_blocks.append(ar)
+        elif item_type == "bilingual":
+            ar_quoted = "\n".join(f"> {l}" for l in ar.split("\n"))
+            if tr:
+                out_blocks.append(f"{ar_quoted}\n\n{tr}")
+            else:
+                out_blocks.append(ar_quoted)
+
+    return "\n\n".join(out_blocks) + "\n"

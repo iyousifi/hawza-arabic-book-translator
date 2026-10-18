@@ -176,6 +176,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Number of pages to translate (e.g. 5)",
     )
     parser.add_argument(
+        "--all",
+        dest="all_pages",
+        action="store_true",
+        help="Translate all remaining pages to the end of the book (in project mode)",
+    )
+    parser.add_argument(
         "--chapter",
         default=None,
         help="Translate only a specific chapter (by number e.g. '1' or title query e.g. 'مباحث الألفاظ')",
@@ -331,6 +337,9 @@ def _build_project_parser() -> argparse.ArgumentParser:
     p_run.add_argument("project_file", help="Path to project JSON file (e.g. Fiqh3.project.json)")
     p_run.add_argument("--pages", default=None, help="Specific page range (e.g. 24-35)")
     p_run.add_argument("--take-pages", type=int, default=None, help="Number of pages to translate from next page")
+    p_run.add_argument("--all", dest="all_pages", action="store_true", help="Translate all remaining pages to the end of the book")
+    p_run.add_argument("--vowels", "--keep-vowels", dest="strip_harakat", action="store_false", default=None, help="Preserve Arabic vocalization/harakat")
+    p_run.add_argument("--no-vowels", "--strip-harakat", dest="strip_harakat", action="store_true", default=None, help="Strip Arabic vocalization/harakat")
     p_run.add_argument("--dry-run", action="store_true", help="Dry run without API calls")
     p_run.add_argument("--no-pdf", dest="pdf", action="store_false", default=True, help="Skip recompiling master PDF")
 
@@ -377,6 +386,8 @@ def _handle_project_cli(args_list: List[str]) -> None:
             project_file=args.project_file,
             pages_str=args.pages,
             take_pages=args.take_pages,
+            all_pages=getattr(args, "all_pages", False),
+            strip_harakat=getattr(args, "strip_harakat", None),
             dry_run=args.dry_run,
             compile_pdf=args.pdf,
         )
@@ -405,6 +416,8 @@ def main(argv: list[str] | None = None) -> None:
             project_file=args.project,
             pages_str=args.pages,
             take_pages=args.take_pages,
+            all_pages=getattr(args, "all_pages", False),
+            strip_harakat=getattr(args, "strip_harakat", None),
             dry_run=args.dry_run,
             compile_pdf=args.pdf if hasattr(args, "pdf") else True,
         )

@@ -374,6 +374,8 @@ def continue_project(
     project_file: str | Path,
     pages_str: Optional[str] = None,
     take_pages: Optional[int] = None,
+    all_pages: bool = False,
+    strip_harakat: Optional[bool] = None,
     dry_run: bool = False,
     compile_pdf: bool = True,
 ) -> ProjectState:
@@ -381,11 +383,17 @@ def continue_project(
     proj_path = Path(project_file)
     state = ProjectState.load(proj_path)
 
+    if strip_harakat is not None:
+        state.strip_harakat = strip_harakat
+
     # 1. Determine target page range
     start_page = state.next_page
     end_page = start_page
 
-    if pages_str:
+    if all_pages:
+        start_page = state.next_page
+        end_page = state.total_pages or start_page
+    elif pages_str:
         m = re.match(r"^(\d+)\s*[-:]\s*(\d+)$", pages_str.strip())
         if m:
             start_page, end_page = int(m.group(1)), int(m.group(2))
