@@ -6,10 +6,13 @@ alternating bilingual Markdown and Typst layouts for Hawza study.
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from translator.normalizer import strip_arabic_vowels
+
+logger = logging.getLogger(__name__)
 
 _STRICT_TAG_RE = re.compile(
     r"(?:^|\n)\s*(?:[#*_\-]+\s*)?"          # optional leading markdown (###, **, -)
@@ -102,6 +105,60 @@ def clean_paragraph_tags(text: str) -> str:
     return cleaned.strip()
 
 
+def sanitize_translation_artifacts(text: str) -> str:
+    """Strip LLM internal deliberations, conversational artifacts, and BiDi bullet hazards.
+
+    1. Removes lines where the LLM talks to itself (e.g. 'Wait...', 'Let's see...', 'In , ...').
+    2. Untangles BiDi bullet hazard lines (e.g. '- "Arabic" -> "Target"') into standard bilingual blocks.
+    3. Strips lone dummy placeholders (e.g. '.', '•', lone brackets).
+    """
+    if not text:
+        return ""
+
+    meta_patterns = [
+        r"^\s*(?:Wait[!,]|Wait\s+a\s+moment|Let'?s\s+see|Look\s+at\s+what|In\s*,\s*|Can\s+we\s+present|First,\s+the\s+completion\s+of|Notice\s+that|Here\s+is\s+the|Untangling\s+the\s+two\s+fragments).*$",
+        r"^\s*If\s+we\s+read\s+.*\s+clearly!?\s*$",
+        r"^\s*Wait,\s+look\s+at\s+how\s+beautiful\s+that\s+is:?\s*$",
+        r"^\s*If\s+we\s+translate\s+both\s+clauses\s+in\s*,.*$",
+        r"^\s*Let'?s\s+check\s*:?\s*$",
+        r"^\s*(?:Right|Left)\s+text:\s*\"[^\"]*\".*$",
+        r"^\s*Formatting\s+check:?\s*$",
+        r"^\s*Only\s+translate\s+what\s+is\s+in.*$",
+        r"^\s*Each\s+paragraph\s+tag.*must\s+be\s+strictly\s+preserved.*$",
+    ]
+    lines = text.splitlines()
+    clean_lines = []
+    for line in lines:
+        if any(re.match(pat, line, re.IGNORECASE) for pat in meta_patterns):
+            continue
+        clean_lines.append(line)
+    text = "\n".join(clean_lines)
+
+    # Untangle bulleted Arabic -> Translation BiDi hazard lines
+    def repl_bullet_arrow(m):
+        ar_part = m.group(1).strip().strip("\"'«»")
+        tr_part = m.group(2).strip().strip("\"'«»")
+        return f"> {ar_part}\n\n{tr_part}"
+
+    bullet_arrow_re = re.compile(
+        r"^\s*[-*•]\s*[\"\'«]?([\u0600-\u06FF\s\d.,;?!:()]+)[\"\'»]?\s*(?:->|→|:)\s*[\"\'«]?(.*?)[\"\'»]?\s*$",
+        re.MULTILINE,
+    )
+    text = bullet_arrow_re.sub(repl_bullet_arrow, text)
+
+    return text.strip()
+
+
+def get_missing_tags(arabic_text: str, translation_text: str) -> List[int]:
+    """Identify 1-based indices of Arabic paragraphs that have missing or empty translation tags."""
+    ar_paras = split_into_paragraphs(clean_paragraph_tags(arabic_text))
+    tagged_dict = parse_tagged_paragraphs(translation_text)
+    if not tagged_dict:
+        return []
+    missing = [i for i in range(1, len(ar_paras) + 1) if i not in tagged_dict or not tagged_dict[i].strip()]
+    return missing
+
+
 def pair_bilingual_paragraphs(
     arabic_text: str,
     translation_text: str,
@@ -113,6 +170,7 @@ def pair_bilingual_paragraphs(
     2. If untagged, uses semantic heading-aware matching so short titles and
        headings are never merged into flowing body paragraphs.
     """
+    translation_text = sanitize_translation_artifacts(translation_text)
     ar_paras = split_into_paragraphs(clean_paragraph_tags(arabic_text))
     tagged_dict = parse_tagged_paragraphs(translation_text)
 
@@ -121,6 +179,8 @@ def pair_bilingual_paragraphs(
         pairs: List[Tuple[str, str]] = []
         for i, ar in enumerate(ar_paras, 1):
             tr_content = tagged_dict.get(i, "")
+            if not tr_content.strip() and ar.strip():
+                logger.warning("Bilingual pairing: Arabic paragraph [P%d] has no translation content.", i)
             pairs.append((ar, clean_paragraph_tags(tr_content)))
 
         # Append any extra translation tags that had no corresponding Arabic
@@ -341,3 +401,88 @@ def consolidate_bilingual_markdown(md_text: str, min_chars: int = 250) -> str:
                 out_blocks.append(ar_quoted)
 
     return "\n\n".join(out_blocks) + "\n"
+
+
+def audit_bilingual_markdown(md_text: str) -> List[Dict[str, Any]]:
+    """Audit bilingual markdown document for formatting, missing translations, and BiDi hazards.
+
+    Returns a list of issue dictionaries containing severity, issue type, line number, and description:
+    - orphaned_arabic_block: consecutive Arabic blocks without intervening translation.
+    - dummy_translation_block: translations that are purely '.', '•', '-', '[P', or dummy markers.
+    - bidi_bullet_hazard: raw Arabic text inside LTR markdown list bullets.
+    - llm_monologue_leak: internal conversational or drafting thoughts from the LLM.
+    """
+    issues = []
+    if not md_text:
+        return issues
+
+    raw_blocks = md_text.split("\n\n")
+    prev_was_arabic = False
+    prev_arabic_line = 0
+
+    line_counter = 1
+    for block in raw_blocks:
+        b = block.strip()
+        lines_in_block = len(block.splitlines())
+        block_line = line_counter
+
+        if not b:
+            line_counter += max(1, lines_in_block) + 1
+            continue
+
+        if b.startswith("<!--") or b.startswith("#") or b.startswith("[^"):
+            prev_was_arabic = False
+            line_counter += lines_in_block + 1
+            continue
+
+        if _FOOTNOTE_HEADER_RE.search(b):
+            prev_was_arabic = False
+            line_counter += lines_in_block + 1
+            continue
+
+        # If it's a section title inside an Arabic quote (e.g. > المرحلة الثانية or > الدرس العاشر)
+        clean_no_quote = "\n".join(l.lstrip("> ").strip() for l in b.splitlines()).strip()
+        if len(clean_no_quote) < 60 and bool(_SECTION_TITLE_RE.match(clean_no_quote)):
+            prev_was_arabic = False
+            line_counter += lines_in_block + 1
+            continue
+
+        if b.startswith(">"):
+            if prev_was_arabic:
+                issues.append({
+                    "severity": "ERROR",
+                    "type": "orphaned_arabic_block",
+                    "line": prev_arabic_line,
+                    "description": f"Consecutive Arabic blocks without intervening translation near line {prev_arabic_line}.",
+                })
+            prev_was_arabic = True
+            prev_arabic_line = block_line
+        else:
+            prev_was_arabic = False
+            if b in (".", "•", "-", "..", "...", "[P", "[", "]"):
+                issues.append({
+                    "severity": "WARNING",
+                    "type": "dummy_translation_block",
+                    "line": block_line,
+                    "description": f"Dummy translation placeholder '{b}' near line {block_line}.",
+                })
+            for l_idx, line in enumerate(b.splitlines(), start=block_line):
+                l_str = line.strip()
+                if l_str.startswith(("- ", "* ", "• ")) and re.search(r"[\u0600-\u06FF]{4,}", l_str):
+                    issues.append({
+                        "severity": "ERROR",
+                        "type": "bidi_bullet_hazard",
+                        "line": l_idx,
+                        "description": f"Raw Arabic found inside LTR list bullet near line {l_idx}: '{l_str[:50]}...'",
+                    })
+                if re.match(r"^\s*(?:Wait[!,]|Let'?s\s+see|Look\s+at\s+what|In\s*,\s*|Can\s+we\s+present)\b", l_str, re.IGNORECASE):
+                    issues.append({
+                        "severity": "WARNING",
+                        "type": "llm_monologue_leak",
+                        "line": l_idx,
+                        "description": f"Potential LLM internal monologue near line {l_idx}: '{l_str[:50]}...'",
+                    })
+
+        line_counter += lines_in_block + 1
+
+    return issues

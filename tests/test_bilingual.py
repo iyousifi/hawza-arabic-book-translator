@@ -5,10 +5,13 @@ import unittest
 from pathlib import Path
 
 from translator.bilingual import (
+    audit_bilingual_markdown,
     clean_paragraph_tags,
     format_bilingual_markdown,
+    get_missing_tags,
     pair_bilingual_paragraphs,
     parse_tagged_paragraphs,
+    sanitize_translation_artifacts,
     split_into_paragraphs,
 )
 from translator.typesetter import (
@@ -257,6 +260,80 @@ Første lektion titel.
         self.assertIn("Dette er første korte del. og her afsluttes den samlede tanke.", consolidated)
         # The section heading must remain its own block
         self.assertIn("> الدرس الثاني: مباحث الألفاظ", consolidated)
+
+    def test_sanitize_translation_artifacts(self):
+        messy_draft = """Wait, look at how beautiful that is:
+In , can we present both coherent sections, clearly separated or harmonized?
+Formatting check:
+Only translate what is in [Arabic text to translate].
+- "وهذا مهم للغاية" -> "Dette er overordentlig vigtigt."
+Dette er normal akademisk tekst."""
+        sanitized = sanitize_translation_artifacts(messy_draft)
+        # Monologue lines must be completely removed
+        self.assertNotIn("Wait, look at how beautiful", sanitized)
+        self.assertNotIn("Formatting check:", sanitized)
+        self.assertNotIn("Only translate what is in", sanitized)
+        # BiDi bullet hazard must be normalized to standard block
+        self.assertIn("> وهذا مهم للغاية", sanitized)
+        self.assertIn("Dette er overordentlig vigtigt.", sanitized)
+        self.assertIn("Dette er normal akademisk tekst.", sanitized)
+
+    def test_get_missing_tags(self):
+        arabic = "فقرة أولى.\n\nفقرة ثانية.\n\nفقرة ثالثة.\n\nفقرة رابعة."
+        # LLM only translated P1, P2, and P4 (omitted P3)
+        draft = """[P1]
+Første oversættelse.
+
+[P2]
+Anden oversættelse.
+
+[P4]
+Fjerde oversættelse."""
+        missing = get_missing_tags(arabic, draft)
+        self.assertEqual(missing, [3])
+
+        # Complete response has no missing tags
+        complete_draft = draft + "\n\n[P3]\nTredje oversættelse."
+        self.assertEqual(get_missing_tags(arabic, complete_draft), [])
+
+    def test_audit_bilingual_markdown(self):
+        bad_md = """# Kapitel 1
+
+> الفقرة الأولى.
+
+> الفقرة الثانية دون ترجمة بينهما.
+
+- "نص عربي داخل قائمة" -> "Dansk oversættelse"
+
+.
+
+> الدرس الثالث: المبحث الأول
+
+Titel oversættelse.
+"""
+        issues = audit_bilingual_markdown(bad_md)
+        issue_types = [iss["type"] for iss in issues]
+        self.assertIn("orphaned_arabic_block", issue_types)
+        self.assertIn("bidi_bullet_hazard", issue_types)
+        self.assertIn("dummy_translation_block", issue_types)
+
+        # Clean document must have zero issues
+        clean_md = """# Kapitel 1
+
+> الفقرة الأولى.
+
+Dette er første oversættelse.
+
+> الفقرة الثانية.
+
+Dette er anden oversættelse.
+
+### الدرس الثالث: المبحث الأول
+
+Titel oversættelse.
+"""
+        clean_issues = audit_bilingual_markdown(clean_md)
+        self.assertEqual(len(clean_issues), 0)
 
 
 if __name__ == "__main__":

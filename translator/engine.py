@@ -609,6 +609,43 @@ def translate(
                 session_terms_block=session_terms_block,
             )
 
+            # --- In-flight Tag Completeness & Artifact Sanitization ---
+            if cfg.inline_arabic:
+                from translator.bilingual import (
+                    clean_paragraph_tags,
+                    get_missing_tags,
+                    sanitize_translation_artifacts,
+                    split_into_paragraphs,
+                )
+                from translator.config import MISSING_TAGS_REPROMPT_TEMPLATE
+
+                draft = sanitize_translation_artifacts(draft)
+                missing = get_missing_tags(chunk_item.text, draft)
+                if missing and not dry_run:
+                    ar_paras = split_into_paragraphs(clean_paragraph_tags(chunk_item.text))
+                    missing_items = []
+                    for m_idx in missing:
+                        if m_idx <= len(ar_paras):
+                            missing_items.append(f"[P{m_idx}]\n{ar_paras[m_idx - 1]}")
+                    if missing_items:
+                        console.print(
+                            f"  [yellow]⚠️ Detected {len(missing_items)} omitted paragraph tag(s) in Chunk {i + 1}; re-prompting for recovery...[/yellow]"
+                        )
+                        reprompt_msg = MISSING_TAGS_REPROMPT_TEMPLATE.format(
+                            missing_tags_list="\n\n".join(missing_items),
+                            target_lang_name=lang_name,
+                        )
+                        try:
+                            recovered = translate_fn(
+                                chunk=reprompt_msg,
+                                system_prompt=system_prompt,
+                                cfg=cfg,
+                            )
+                            if recovered:
+                                draft = draft + "\n\n" + sanitize_translation_artifacts(recovered)
+                        except Exception as reprompt_err:
+                            console.print(f"  [dim red]Recovery re-prompt failed: {reprompt_err}[/dim red]")
+
             # --- Pass 2: Self-Critique & Verification (Optional) ---
             if cfg.verify:
                 progress.update(
@@ -650,6 +687,10 @@ def translate(
                 )
             else:
                 final_text = draft
+
+            if cfg.inline_arabic:
+                from translator.bilingual import sanitize_translation_artifacts
+                final_text = sanitize_translation_artifacts(final_text)
 
             # Heuristically register any bilingual terms explicitly marked in translation
             text_terms = session_memory.extract_from_text(final_text)

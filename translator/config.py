@@ -54,7 +54,9 @@ def build_system_prompt(target_lang: str = "en", domain: str = "mantiq", inline_
      [P2] (Translation of paragraph 2)
 
      [P3] (Translation of paragraph 3)
-   - Do NOT omit any paragraph tag, do NOT merge multiple paragraphs under one tag, and do NOT alter tag numbering.
+   - You MUST include EVERY paragraph tag from [P1] to [Pn]. Never omit any paragraph tag, do NOT merge multiple paragraphs under one tag, and do NOT alter tag numbering.
+   - **Zero Meta-Commentary**: Output ONLY the translation. Never output conversational deliberations, preambles, notes-to-self (e.g. 'Wait...', 'Let's see...'), or drafting musings under any circumstances.
+   - **No Mixed Bullet Mappings**: NEVER format translations as bullet list pairs (e.g. do NOT output '- "Arabic" -> "Translation"' or '• Arabic -> Translation'). Always place translations in standard paragraphs under each [Pi] tag.
 """
 
     return f"""\
@@ -120,7 +122,8 @@ the translation. Use these exact renderings whenever the corresponding Arabic te
 
 USER_PROMPT_TEMPLATE = """\
 Translate the following Arabic text into {target_lang_name}. Output ONLY the {target_lang_name} translation, \
-preserving all paragraph breaks and structural formatting. Do not output the original Arabic.
+preserving all paragraph breaks and structural formatting. Do not output the original Arabic. \
+Do not output conversational remarks, preambles, internal deliberations, or meta-commentary under any circumstances.
 
 ---
 
@@ -131,13 +134,24 @@ preserving all paragraph breaks and structural formatting. Do not output the ori
 USER_PROMPT_WITH_CONTEXT_TEMPLATE = """\
 Translate the following Arabic text into {target_lang_name}. Output ONLY the {target_lang_name} translation \
 of the section labeled "[Arabic text to translate]". Preserve all paragraph breaks and structural formatting. \
-Do not re-translate the preceding context. Do not output the original Arabic.
+Do not re-translate the preceding context. Do not output the original Arabic. \
+Do not output conversational remarks, preambles, internal deliberations, or meta-commentary under any circumstances.
 
 {context_block}
 ---
 
 [Arabic text to translate]:
 {chunk}
+"""
+
+
+MISSING_TAGS_REPROMPT_TEMPLATE = """\
+The translation response for the previous chunk omitted the translations for the following tagged paragraphs:
+{missing_tags_list}
+
+Translate ONLY the omitted paragraphs above into {target_lang_name}.
+Precede each translated paragraph with its EXACT matching tag (e.g. [P1], [P2]).
+Output ONLY the tagged translation without conversational remarks or preambles.
 """
 
 

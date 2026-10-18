@@ -44,8 +44,9 @@ def markdown_to_typst_content(
     keep_shaddah: bool = False,
 ) -> str:
     """Convert academic markdown body text into clean Typst markup."""
-    from translator.bilingual import consolidate_bilingual_markdown
+    from translator.bilingual import consolidate_bilingual_markdown, sanitize_translation_artifacts
 
+    md_text = sanitize_translation_artifacts(md_text)
     md_text = consolidate_bilingual_markdown(md_text, min_chars=250)
 
     if strip_harakat:
@@ -493,6 +494,21 @@ def compile_markdown_to_pdf(
 
     out_pdf = Path(output_pdf_path)
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+    # 0. Pre-compilation bilingual quality audit
+    from translator.bilingual import audit_bilingual_markdown
+    audit_issues = audit_bilingual_markdown(md_text)
+    if audit_issues:
+        error_count = sum(1 for iss in audit_issues if iss["severity"] == "ERROR")
+        warning_count = len(audit_issues) - error_count
+        logger.warning(
+            "Pre-compilation audit found %d issue(s) (%d error(s), %d warning(s)) in Markdown source.",
+            len(audit_issues),
+            error_count,
+            warning_count,
+        )
+        for iss in audit_issues[:3]:
+            logger.warning("  [%s] Near line %d: %s", iss["severity"], iss["line"], iss["description"])
 
     # 1. Convert markdown to Typst body
     typst_body = markdown_to_typst_content(
